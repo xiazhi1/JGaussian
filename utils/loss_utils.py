@@ -10,8 +10,8 @@
 #
 
 import jittor as jt
-import jittor as jt.nn.functional as F
-from torch.autograd import Variable
+# from jittor import nn as jt.nn.functional as F
+# from torch.autograd import Variable
 from math import exp
 
 def l1_loss(network_output, gt):

@@ -10,7 +10,7 @@
 #
 
 import jittor as jt
-from torch import nn
+from jittor import nn
 import numpy as np
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
