@@ -45,15 +45,15 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
     def __init__(self, sh_degree : int):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
-        self._xyz = jt.empty(0)
-        self._features_dc = jt.empty(0)
-        self._features_rest = jt.empty(0)
-        self._scaling = jt.empty(0)
-        self._rotation = jt.empty(0)
-        self._opacity = jt.empty(0)
-        self.max_radii2D = jt.empty(0)
-        self.xyz_gradient_accum = jt.empty(0)
-        self.denom = jt.empty(0)
+        self._xyz = jt.empty((0,))
+        self._features_dc = jt.empty((0,))
+        self._features_rest = jt.empty((0,))
+        self._scaling = jt.empty((0,))
+        self._rotation = jt.empty((0,))
+        self._opacity = jt.empty((0,))
+        self.max_radii2D = jt.empty((0,))
+        self.xyz_gradient_accum = jt.empty((0,))
+        self.denom = jt.empty((0,))
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
@@ -139,12 +139,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
         opacities = inverse_sigmoid(0.1 * jt.ones((fused_point_cloud.shape[0], 1), dtype=jt.float)) # 创建一个张量，用于存储点的不透明度信息，其形状为 (点的数量, 1)，并将其初始化为0.1
 
-        self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True)) # 将点云坐标张量转换为可优化的参数
-        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True)) # 将特征张量的第一个通道转换为可优化的参数(即前面提到的点云颜色特征)
-        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True)) # 将特征张量的其他通道转换为可优化的参数，处理方式与上面类似，都是首先选择通道，然后转置，最后用方法确保内存连续
-        self._scaling = nn.Parameter(scales.requires_grad_(True))
-        self._rotation = nn.Parameter(rots.requires_grad_(True))
-        self._opacity = nn.Parameter(opacities.requires_grad_(True)) # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
+        self._xyz = nn.Parameter(fused_point_cloud) # 将点云坐标张量转换为可优化的参数
+        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous()) # 将特征张量的第一个通道转换为可优化的参数(即前面提到的点云颜色特征)
+        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous()) # 将特征张量的其他通道转换为可优化的参数，处理方式与上面类似，都是首先选择通道，然后转置，最后用方法确保内存连续
+        self._scaling = nn.Parameter(scales)
+        self._rotation = nn.Parameter(rots)
+        self._opacity = nn.Parameter(opacities) # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
         self.max_radii2D = jt.zeros((self.get_xyz.shape[0])) # 创建一个零张量，用于存储点云中每个点的最大2D半径，其形状为 (点的数量)
 
     def training_setup(self, training_args): # 该方法用于设置训练参数和优化器
@@ -247,12 +247,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        self._xyz = nn.Parameter(jt.array(xyz, dtype=jt.float).requires_grad_(True))
-        self._features_dc = nn.Parameter(jt.array(features_dc, jt=jt.float).transpose(1, 2).contiguous().requires_grad_(True))
-        self._features_rest = nn.Parameter(jt.array(features_extra, dtype=jt.float).transpose(1, 2).contiguous().requires_grad_(True))
-        self._opacity = nn.Parameter(jt.array(opacities, dtype=jt.float).requires_grad_(True))
-        self._scaling = nn.Parameter(jt.array(scales, dtype=jt.float).requires_grad_(True))
-        self._rotation = nn.Parameter(jt.array(rots, dtype=jt.float).requires_grad_(True))
+        self._xyz = nn.Parameter(jt.array(xyz, dtype=jt.float))
+        self._features_dc = nn.Parameter(jt.array(features_dc, jt=jt.float).transpose(1, 2).contiguous())
+        self._features_rest = nn.Parameter(jt.array(features_extra, dtype=jt.float).transpose(1, 2).contiguous())
+        self._opacity = nn.Parameter(jt.array(opacities, dtype=jt.float))
+        self._scaling = nn.Parameter(jt.array(scales, dtype=jt.float))
+        self._rotation = nn.Parameter(jt.array(rots, dtype=jt.float))
 
         self.active_sh_degree = self.max_sh_degree
 
@@ -280,12 +280,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
                 stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
 
                 del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
+                group["params"][0] = nn.Parameter((group["params"][0][mask]))
                 self.optimizer.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
-                group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
+                group["params"][0] = nn.Parameter(group["params"][0][mask])
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 

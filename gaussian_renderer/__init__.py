@@ -11,7 +11,7 @@
 
 import jittor as jt
 import math
-# from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
@@ -23,7 +23,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : jt.array, scal
     """
  
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
-    screenspace_points = jt.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype).cuda().requires_grad(True) + 0 # 创建一个和pc.get_xyz相同大小的全0张量，用于存储空间坐标的投影坐标，也就是模拟3DGaussian的投影
+    screenspace_points = jt.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype) + 0 # 创建一个和pc.get_xyz相同大小的全0张量，用于存储空间坐标的投影坐标，也就是模拟3DGaussian的投影
     try:
         screenspace_points.retain_grad() # 尝试对非叶子节点保留梯度
     except:
