@@ -69,7 +69,7 @@ class Scene:
         self.cameras_extent = scene_info.nerf_normalization["radius"] # 获取 Nerf 模型的归一化半径
         # 根据不同的分辨率比例，加载训练集和测试集的相机信息，并将它们存储在对象中的相应属性中。
         for resolution_scale in resolution_scales:
-            print("Loading Training Cameras")
+            print("Loading Training Cameras")            
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)

@@ -8,7 +8,7 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
-
+import jittor as jt
 from scene.cameras import Camera
 import numpy as np
 from utils.general_utils import PILtoTorch
@@ -38,7 +38,7 @@ def loadCam(args, id, cam_info, resolution_scale):
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
-    resized_image_rgb = PILtoTorch(cam_info.image, resolution)
+    resized_image_rgb = PILtoTorch(cam_info.image, resolution) # 存疑 jittor.jittor_core.var似乎不是jittor.var类型
 
     gt_image = resized_image_rgb[:3, ...]
     loaded_mask = None

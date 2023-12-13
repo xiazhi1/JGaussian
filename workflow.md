@@ -7,3 +7,7 @@
 ## train.py
 
 目前train.py主要是直接照搬GaussianSPlatting的代码，具体修改思路是暂时不管tensorboard和NetworkGui部分，先修改核心的GaussianModel与SceneModel
+
+在训练过程中我们利用GPU训练，但选定后无法修改为cpu，因为GPU挂载后所有产生的var都会带上梯度，不再是原来cpu下的var，与torch中的tensor不同，这里采用的方法是先用numpy创建矩阵，再用jittor.array转为var
+
+又不行了 还是挂不了 改不成var，因为这次返回回来的就是jittor.jittor_core.var这个没有data,也没有numpy方法，完全不行。问题在camera_utils.py的41行

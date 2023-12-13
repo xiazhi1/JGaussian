@@ -42,7 +42,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gaussians.restore(model_params, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = jt.array(bg_color, dtype=jt.float32).misc.cuda() # 背景颜色
+    background = jt.array(bg_color, dtype=jt.float32) # 背景颜色
 
     viewpoint_stack = None # 用于存储视角信息
     ema_loss_for_log = 0.0 # 用于计算每个iteration的loss
@@ -187,9 +187,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         # torch.cuda.empty_cache()
 
 if __name__ == "__main__":
+    os.environ['PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT'] = '2'
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Training script parameters")
-    
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)

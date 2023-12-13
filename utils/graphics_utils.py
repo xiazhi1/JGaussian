@@ -21,9 +21,9 @@ class BasicPointCloud(NamedTuple):
 
 def geom_transform_points(points, transf_matrix):
     P, _ = points.shape
-    ones = torch.ones(P, 1, dtype=points.dtype, device=points.device)
-    points_hom = torch.cat([points, ones], dim=1)
-    points_out = torch.matmul(points_hom, transf_matrix.unsqueeze(0))
+    ones = jt.ones(P, 1, dtype=points.dtype)
+    points_hom = jt.cat([points, ones], dim=1)
+    points_out = jt.nn.matmul(points_hom, transf_matrix.unsqueeze(0))
 
     denom = points_out[..., 3:] + 0.0000001
     return (points_out[..., :3] / denom).squeeze(dim=0)
@@ -49,6 +49,7 @@ def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
     return np.float32(Rt)
 
 def getProjectionMatrix(znear, zfar, fovX, fovY):
+
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
 
@@ -56,8 +57,7 @@ def getProjectionMatrix(znear, zfar, fovX, fovY):
     bottom = -top
     right = tanHalfFovX * znear
     left = -right
-
-    P = torch.zeros(4, 4)
+    P = jt.array(np.zeros((4,4)))
 
     z_sign = 1.0
 

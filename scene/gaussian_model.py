@@ -11,13 +11,14 @@
 
 import jittor as jt
 import numpy as np
+import torch
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from jittor import nn
 import os
 from utils.system_utils import mkdir_p
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
-# from simple_knn._C import distCUDA2
+from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
@@ -123,20 +124,20 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
         self.spatial_lr_scale = spatial_lr_scale # 场景的NeRF半径在创建Gauusian时作为空间低分辨率的缩放比例
-        fused_point_cloud = jt.array(np.asarray(pcd.points)).float().cuda() #将输入点云数据的坐标转换为PyTorch张量，并移动到GPU上
-        fused_color = RGB2SH(jt.array(np.asarray(pcd.colors)).float().cuda()) #将输入点云数据的颜色信息转换为球谐函数表示，并移动到GPU上
-        features = jt.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda() #创建一个零张量，用于存储特征信息，其形状为 (点的数量, 3, 球谐函数的维度)
+        fused_point_cloud = jt.array(np.asarray(pcd.points)).float() #将输入点云数据的坐标转换为PyTorch张量，并移动到GPU上
+        fused_color = RGB2SH(jt.array(np.asarray(pcd.colors)).float()) #将输入点云数据的颜色信息转换为球谐函数表示，并移动到GPU上
+        features = jt.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float() #创建一个零张量，用于存储特征信息，其形状为 (点的数量, 3, 球谐函数的维度)
         features[:, :3, 0 ] = fused_color #将点云颜色信息存储到特征张量的第一个通道中
         features[:, 3:, 1:] = 0.0 # 将特征张量的其他通道设置为零
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
 
-        dist2 = jt.clamp_min(distCUDA2(jt.array(np.asarray(pcd.points)).float().cuda()), 0.0000001) # 计算点云中点之间的距离平方，并进行最小值截断，防止除以零
+        dist2 = jt.maximum(jt.array(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()).cpu().numpy()), 0.0000001) # 计算点云中点之间的距离平方，并进行最小值截断，防止除以零,次模块要求tensor
         scales = jt.log(jt.sqrt(dist2))[...,None].repeat(1, 3) # 计算每个点的缩放因子，以对应于点到点之间的距离
-        rots = jt.zeros((fused_point_cloud.shape[0], 4)).cuda() # 创建一个零张量，用于存储旋转信息，其形状为 (点的数量, 4)
+        rots = jt.zeros((fused_point_cloud.shape[0], 4)) # 创建一个零张量，用于存储旋转信息，其形状为 (点的数量, 4)
         rots[:, 0] = 1 # 将旋转张量的第一个通道设置为1，其余通道设置为零
 
-        opacities = inverse_sigmoid(0.1 * jt.ones((fused_point_cloud.shape[0], 1), dtype=jt.float).cuda()) # 创建一个张量，用于存储点的不透明度信息，其形状为 (点的数量, 1)，并将其初始化为0.1
+        opacities = inverse_sigmoid(0.1 * jt.ones((fused_point_cloud.shape[0], 1), dtype=jt.float)) # 创建一个张量，用于存储点的不透明度信息，其形状为 (点的数量, 1)，并将其初始化为0.1
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True)) # 将点云坐标张量转换为可优化的参数
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True)) # 将特征张量的第一个通道转换为可优化的参数(即前面提到的点云颜色特征)
@@ -144,12 +145,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True)) # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
-        self.max_radii2D = jt.zeros((self.get_xyz.shape[0])).cuda() # 创建一个零张量，用于存储点云中每个点的最大2D半径，其形状为 (点的数量)
+        self.max_radii2D = jt.zeros((self.get_xyz.shape[0])) # 创建一个零张量，用于存储点云中每个点的最大2D半径，其形状为 (点的数量)
 
     def training_setup(self, training_args): # 该方法用于设置训练参数和优化器
         self.percent_dense = training_args.percent_dense
-        self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1)).cuda()
-        self.denom = jt.zeros((self.get_xyz.shape[0], 1)).cuda() # 创建两个零张量，用于存储点云中每个点的梯度累积和梯度累积次数，其形状都为 (点的数量, 1)
+        self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
+        self.denom = jt.zeros((self.get_xyz.shape[0], 1)) # 创建两个零张量，用于存储点云中每个点的梯度累积和梯度累积次数，其形状都为 (点的数量, 1)
 
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
@@ -246,12 +247,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        self._xyz = nn.Parameter(jt.array(xyz, dtype=jt.float).cuda().requires_grad_(True))
-        self._features_dc = nn.Parameter(jt.array(features_dc, jt=jt.float).cuda().transpose(1, 2).contiguous().requires_grad_(True))
-        self._features_rest = nn.Parameter(jt.array(features_extra, dtype=jt.float).cuda().transpose(1, 2).contiguous().requires_grad_(True))
-        self._opacity = nn.Parameter(jt.array(opacities, dtype=jt.float).cuda().requires_grad_(True))
-        self._scaling = nn.Parameter(jt.array(scales, dtype=jt.float).cuda().requires_grad_(True))
-        self._rotation = nn.Parameter(jt.array(rots, dtype=jt.float).cuda().requires_grad_(True))
+        self._xyz = nn.Parameter(jt.array(xyz, dtype=jt.float).requires_grad_(True))
+        self._features_dc = nn.Parameter(jt.array(features_dc, jt=jt.float).transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(jt.array(features_extra, dtype=jt.float).transpose(1, 2).contiguous().requires_grad_(True))
+        self._opacity = nn.Parameter(jt.array(opacities, dtype=jt.float).requires_grad_(True))
+        self._scaling = nn.Parameter(jt.array(scales, dtype=jt.float).requires_grad_(True))
+        self._rotation = nn.Parameter(jt.array(rots, dtype=jt.float).requires_grad_(True))
 
         self.active_sh_degree = self.max_sh_degree
 
