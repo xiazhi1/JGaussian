@@ -10,6 +10,7 @@
 #
 
 import os,time
+import torch
 import jittor as jt
 import argparse
 from random import randint
@@ -65,8 +66,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 network_gui.conn = None 
         iter_start = time.time()
 
-        gaussians.update_learning_rate(iteration)
-
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
@@ -79,15 +78,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background) # 调用gaussian_renderer中的render函数进行光栅化渲染
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
+        image, viewspace_point_tensor, visibility_filter, radii = jt.array(render_pkg["render"].cpu().detach().numpy()), render_pkg["viewspace_points"], jt.array(render_pkg["visibility_filter"].cpu().detach().numpy()), jt.array(render_pkg["radii"].cpu().detach().numpy())
 
         # Loss
-        gt_image = viewpoint_cam.original_image.cuda()
+        gt_image = viewpoint_cam.original_image
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
-        loss.backward() 
-
+        gaussians.optimizer.backward(loss)  # 计算场景梯度（优化器定义在场景的每一个Gaussian中）
+        
         iter_end=time.time() # 用于计算每个iteration的时间
 
         with jt.no_grad(): 
@@ -108,8 +107,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Densification
             if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
                 # Keep track of max radii in image-space for pruning
-                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
-                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter) # 更新视空间坐标和可见性
+                gaussians.max_radii2D[visibility_filter] = jt.maximum(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
+                gaussians.add_densification_stats(viewspace_point_tensor,visibility_filter) # 更新视空间坐标和可见性
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0: # 如果当前迭代大于指定的开始密集化的迭代数，并且当前迭代是密集化间隔的倍数，那么就进行密集化和修剪操作
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None

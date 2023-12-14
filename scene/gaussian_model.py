@@ -147,21 +147,20 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._opacity = nn.Parameter(opacities) # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
         self.max_radii2D = jt.zeros((self.get_xyz.shape[0])) # 创建一个零张量，用于存储点云中每个点的最大2D半径，其形状为 (点的数量)
 
-    def training_setup(self, training_args): # 该方法用于设置训练参数和优化器
+    def training_setup(self, training_args): # 该方法用于设置训练参数和优化器,因为jittor的特殊性，这里的参数设置与PyTorch有所不同。可能会多很多的参数设置
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
         self.denom = jt.zeros((self.get_xyz.shape[0], 1)) # 创建两个零张量，用于存储点云中每个点的梯度累积和梯度累积次数，其形状都为 (点的数量, 1)
-
         l = [
             {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
             {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
             {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
-            {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
-            {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
+            {'params': [self._opacity.numpy()], 'lr': training_args.opacity_lr, "name": "opacity"},
+            {'params': [self._scaling.numpy()], 'lr': training_args.scaling_lr, "name": "scaling"},
+            {'params': [self._rotation.numpy()], 'lr': training_args.rotation_lr, "name": "rotation"},
         ] # 创建一个列表，用于存储所有可优化的参数，以及它们的学习率和名称
 
-        self.optimizer = jt.optim.Adam(l, lr=0.0, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
+        self.optimizer = jt.optim.Adam(l, lr=0.0, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表,jt的优化器不会优化非叶子节点的tensor，所以最后只好用torch的优化器
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
@@ -402,6 +401,6 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
         torch.cuda.empty_cache()   # 清空GPU缓存
 
-    def add_densification_stats(self, viewspace_point_tensor, update_filter):
-        self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
+    def add_densification_stats(self,viewspace_point_tensor,update_filter):
+        self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1

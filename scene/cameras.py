@@ -53,7 +53,7 @@ class Camera(nn.Module):
         self.world_view_transform = jt.array(getWorld2View2(R, T, trans, scale)).transpose(0, 1)
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1)
         self.full_proj_transform = nn.bmm(self.world_view_transform.unsqueeze(0), self.projection_matrix.unsqueeze(0)).squeeze(0)
-        self.camera_center = jt.linalg.inv(self.world_view_transform)[3, :3]
+        self.camera_center = jt.linalg.inv(self.world_view_transform)[3, :3] # 此处怎么又返回的是jittor.jittor_core.var类型?存疑
 
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):

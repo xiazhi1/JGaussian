@@ -11,3 +11,14 @@
 在训练过程中我们利用GPU训练，但选定后无法修改为cpu，因为GPU挂载后所有产生的var都会带上梯度，不再是原来cpu下的var，与torch中的tensor不同，这里采用的方法是先用numpy创建矩阵，再用jittor.array转为var
 
 又不行了 还是挂不了 改不成var，因为这次返回回来的就是jittor.jittor_core.var这个没有data,也没有numpy方法，完全不行。问题在camera_utils.py的41行
+
+
+其实没有错 是我安装错jittor了，jittor最好按照1.3.6.5配 暂时没出现毛病
+
+jittor和torch生成的变量var与tensor相比，有个比较重要的区别就是jittor.var没有grad属性,grad只能通过创建优化器，然后对优化器参数求jt.opt_grad，所以这里决定在train.py中专门创建一个额外的optimizer来优化在训练过程中随迭代更新但之前未被添加到GaussianModel里的参数
+
+始终没有用，问题在于jittor无法实现对非叶子节点的梯度保留，因为jittor追求高速度，尝试了新建优化器，计算与loss的梯度，都失败，算出来的梯度都是0，最后暂时先跳过，先用tensor保留梯度,jittor的adam优化器无法对tensor计算梯度，所以最后只好都换成torch的优化器和优化参数，暂时先跑着，
+
+也就是说这里为了求到viewspace_point_tensor的梯度，因为是他是由非叶子节点screenspace_points利用retain_grad保留得到的梯度，在jittor中反复尝试均未找到好的方法，所以暂时用torch.grad保留梯度，但是其在jittor的adam优化器中无法计算梯度，所以最后用的是torch的adam优化器，但是这样好像还是求不出梯度。。。
+
+新的解决思路，把screenspace_points放到训练参数的配置中去修改
