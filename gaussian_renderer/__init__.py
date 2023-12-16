@@ -25,11 +25,11 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : jt.array, scal
     # 问题最大的地方 jittor无法对非叶子节点保留梯度，尝试新建优化器，直接计算其与loss的梯度都失败，结果都为0，最后暂时放弃，先往后面走
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = jt.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype) + 0 # 创建一个和pc.get_xyz相同大小的全0张量，用于存储空间坐标的投影坐标，也就是模拟3DGaussian的投影
-    try:
-        screenspace_points.retain_grad() # 尝试对非叶子节点保留梯度
-    except:
-        pass
-
+    # try:
+    #     screenspace_points.retain_grad() # 尝试对非叶子节点保留梯度
+    # except:
+    #     pass
+    
 
     # Set up rasterization configuration：设置光栅化配置
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
