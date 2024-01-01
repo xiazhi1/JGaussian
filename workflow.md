@@ -87,3 +87,7 @@ jtorch和jittor版本对应又出现了问题 一直过不去jtorch测试用例�
 尝试参考代码[torch-splatting](https://github.com/hbb1/torch-splatting/tree/main)复现光栅化器，这段代码没提供对simple-Knn的复现，到时候遇到问题了再修改，先试试看这个代码能不能用，然后看看能不能用它来替代光栅化器那部分
 
 暂时没跑，大致浏览了torch-splatting与render部分有关的代码，主要集中在gauss_render.py函数，其中的render函数与原项目的render函数接口类似，功能类似，尝试看能否通过修改接口直接复用这部分函数
+
+现在在尝试接torch_splatting的renderer部分到源代码中，torch_splatting没考虑对screenspace_points的梯度的保留与计算，之后再添加，先确保二者能对应上
+
+目前遇到的问题是不知道如何接[https://github.com/hbb1/torch-splatting/issues/3](https://github.com/hbb1/torch-splatting/issues/3)这个里面提到的相机焦距和渲染size的问题

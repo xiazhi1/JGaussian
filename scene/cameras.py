@@ -12,7 +12,7 @@
 import jittor as jt
 from jittor import nn
 import numpy as np
-from utils.graphics_utils import getWorld2View2, getProjectionMatrix
+from utils.graphics_utils import getWorld2View2, getProjectionMatrix,fov2focal
 
 class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
@@ -38,6 +38,8 @@ class Camera(nn.Module):
         self.original_image = image.clamp(0.0, 1.0)
         self.image_width = self.original_image.shape[2]
         self.image_height = self.original_image.shape[1]
+        self.focal_x = fov2focal(self.FoVx, self.image_width)
+        self.focal_y = fov2focal(self.FoVy, self.image_height) # add focal to camera
 
         if gt_alpha_mask is not None:
             self.original_image *= gt_alpha_mask
@@ -53,7 +55,7 @@ class Camera(nn.Module):
         self.world_view_transform = jt.array(getWorld2View2(R, T, trans, scale)).transpose(0, 1)
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1)
         self.full_proj_transform = nn.bmm(self.world_view_transform.unsqueeze(0), self.projection_matrix.unsqueeze(0)).squeeze(0)
-        self.camera_center = jt.linalg.inv(self.world_view_transform)[3, :3] # 此处怎么又返回的是jittor.jittor_core.var类型?存疑
+        self.camera_center = jt.linalg.inv(self.world_view_transform)[3, :3] 
 
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):

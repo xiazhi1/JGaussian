@@ -15,7 +15,8 @@ import jittor as jt
 import argparse
 from random import randint
 from utils.loss_utils import l1_loss, ssim
-from gaussian_renderer import  network_gui, GaussianRenderer
+from gaussian_renderer import  network_gui
+from gaussian_renderer.gauss_render import GaussianRenderer
 import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state
@@ -44,12 +45,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gaussians.restore(model_params, opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    render_kwargs = {}
-    if dataset.white_background:
-        render_kwargs = {
-        'white_bkgd': True,
-    }
-    gaussian_renderer = GaussianRenderer(kwargs=render_kwargs)
+    if not dataset.white_background:
+        gaussian_renderer = GaussianRenderer(white_bkgd=False)
+    gaussian_renderer = GaussianRenderer()
     background = jt.array(bg_color, dtype=jt.float32) # 背景颜色
 
     viewpoint_stack = None # 用于存储视角信息
@@ -64,7 +62,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 net_image_bytes = None
                 custom_cam, do_training, pipe.convert_SHs_python, pipe.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
                 if custom_cam != None:
-                    net_image = render(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
+                    net_image = gaussian_renderer(custom_cam, gaussians, pipe, background, scaling_modifer)["render"]
                     net_image_bytes = memoryview((jt.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
                 network_gui.send(net_image_bytes, dataset.source_path)
                 if do_training and ((iteration < int(opt.iterations)) or not keep_alive):
@@ -82,13 +80,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             viewpoint_stack = scene.getTrainCameras().copy()
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
-
-
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-
-        render_pkg = gaussian_renderer(viewpoint_cam,gaussians,pipe,background) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
+        render_pkg = gaussian_renderer.forward(viewpoint_cam,gaussians) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
         image, depth,alpha,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["depth"], render_pkg["alpha"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 暂时没有viewspace_point_tensor
         # render_pkg = render(viewpoint_cam, gaussians, pipe, background) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
         # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]

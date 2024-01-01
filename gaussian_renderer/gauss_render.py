@@ -3,7 +3,7 @@ import jittor as jt
 from jittor import nn as nn
 from jittor import init 
 import math
-from einops import reduce
+# from einops import reduce
 
 def inverse_sigmoid(x):
     return jt.log(x/(1-x))
@@ -90,8 +90,8 @@ def build_covariance_2d(
     t = (mean3d @ viewmatrix[:3,:3]) + viewmatrix[-1:,:3]
 
     # truncate the influences of gaussians far outside the frustum.
-    tx = (t[..., 0] / t[..., 2]).clip(min=-tan_fovx*1.3, max=tan_fovx*1.3) * t[..., 2]
-    ty = (t[..., 1] / t[..., 2]).clip(min=-tan_fovy*1.3, max=tan_fovy*1.3) * t[..., 2]
+    tx = (t[..., 0] / t[..., 2]).clamp(min_v=-tan_fovx*1.3, max_v=tan_fovx*1.3) * t[..., 2]
+    ty = (t[..., 1] / t[..., 2]).clamp(min_v=-tan_fovy*1.3, max_v=tan_fovy*1.3) * t[..., 2]
     tz = t[..., 2] # 对t进行裁剪确保其在视锥体内
 
     # Eq.29 locally affine transform 
@@ -105,11 +105,11 @@ def build_covariance_2d(
     # J[..., 2, 0] = tx / t.norm(dim=-1) # discard
     # J[..., 2, 1] = ty / t.norm(dim=-1) # discard
     # J[..., 2, 2] = tz / t.norm(dim=-1) # discard
-    W = viewmatrix[:3,:3].T # transpose to correct viewmatrix
-    cov2d = J @ W @ cov3d @ W.T @ J.permute(0,2,1) # 通过仿射变换和透视变换将3D协方差矩阵转换为2D协方差矩阵
+    W = viewmatrix[:3,:3].transpose() # transpose to correct viewmatrix
+    cov2d = J @ W @ cov3d @ W.transpose() @ J.permute(0,2,1) # 通过仿射变换和透视变换将3D协方差矩阵转换为2D协方差矩阵
     
     # add low pass filter here according to E.q. 32
-    filter = jt.init.eye(2,2).to(cov2d) * 0.3 # 可视为一个低通滤波器
+    filter = jt.init.eye((2,2)).to(cov2d) * 0.3 # 可视为一个低通滤波器
     return cov2d[:, :2, :2] + filter[None]
 
 
@@ -127,18 +127,18 @@ def projection_ndc(points, viewmatrix, projmatrix): # 将3DGaussian投影到NDC�
 def get_radius(cov2d): # 该函数用于计算2D高斯分布的半径
     det = cov2d[:, 0, 0] * cov2d[:,1,1] - cov2d[:, 0, 1] * cov2d[:,1,0]  # 首先计算协方差矩阵的行列式
     mid = 0.5 * (cov2d[:, 0,0] + cov2d[:,1,1]) # 计算协方差矩阵的迹的一半，即协方差矩阵的特征值的平均值
-    lambda1 = mid + jt.sqrt((mid**2-det).clip(min=0.1))
-    lambda2 = mid - jt.sqrt((mid**2-det).clip(min=0.1)) # 计算协方差矩阵的特征值
-    return 3.0 * jt.sqrt(jt.max(lambda1, lambda2)).ceil() # 基于3倍标准差的原则计算半径
+    lambda1 = mid + jt.sqrt((mid**2-det).clamp(min_v=0.1))
+    lambda2 = mid - jt.sqrt((mid**2-det).clamp(min_v=0.1)) # 计算协方差矩阵的特征值
+    return 3.0 * jt.sqrt(jt.maximum(lambda1, lambda2)).ceil() # 基于3倍标准差的原则计算半径
 
 @jt.no_grad()
 def get_rect(pix_coord, radii, width, height): # 该函数用于计算2D高斯分布的矩形区域
     rect_min = (pix_coord - radii[:,None])  # pix_coord是2D高斯分布的中心点，radii是2D高斯分布的半径
     rect_max = (pix_coord + radii[:,None]) # 计算矩形区域的最小和最大坐标
-    rect_min[..., 0] = rect_min[..., 0].clip(0, width - 1.0)
-    rect_min[..., 1] = rect_min[..., 1].clip(0, height - 1.0)
-    rect_max[..., 0] = rect_max[..., 0].clip(0, width - 1.0)
-    rect_max[..., 1] = rect_max[..., 1].clip(0, height - 1.0) # 限制矩形区域的x,y坐标在图像范围内
+    rect_min[..., 0] = rect_min[..., 0].clamp(0, width - 1.0)
+    rect_min[..., 1] = rect_min[..., 1].clamp(0, height - 1.0)
+    rect_max[..., 0] = rect_max[..., 0].clamp(0, width - 1.0)
+    rect_max[..., 1] = rect_max[..., 1].clamp(0, height - 1.0) # 限制矩形区域的x,y坐标在图像范围内
     return rect_min, rect_max
 
 
@@ -154,24 +154,26 @@ class GaussianRenderer():
     >>> out = gaussRender(pc=gaussModel, camera=camera)
     """
 
-    def __init__(self, active_sh_degree=3, white_bkgd=True, **kwargs):
+    def __init__(self, active_sh_degree=3, white_bkgd=True):
         self.active_sh_degree = active_sh_degree
         self.debug = False
         self.white_bkgd = white_bkgd
-        self.pix_coord = jt.stack(jt.meshgrid(jt.arange(256), jt.arange(256), indexing='xy'), dim=-1)
+        y, x = jt.meshgrid(jt.arange(256), jt.arange(256))
+        self.pix_coord = jt.stack((x, y), dim=-1) # 用此来实现torch.meshgrid功能
         
     
     def build_color(self, means3D, shs, camera): # 计算每个3D点的颜色
         rays_o = camera.camera_center
         rays_d = means3D - rays_o # 计算每个3D点到相机中心的方向向量
         color = eval_sh(self.active_sh_degree, shs.permute(0,2,1), rays_d) # 使用eval_sh函数将球谐函数转换为每个方向的RGB颜色
-        color = (color + 0.5).clip(min=0.0) # 将颜色值调整到[0, 1]范围内
+        color = jt.maximum(0.0, color + 0.5)
+        color = jt.minimum(1.0, color) # 将颜色值调整到[0, 1]范围内
         return color
     
     def render(self, camera, means2D, cov2d, color, opacity, depths):
         radii = get_radius(cov2d)
         rect = get_rect(means2D, radii, width=camera.image_width, height=camera.image_height)
-        
+        self.pix_coord = jt.stack(jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width)), dim=-1) # change to image size
         self.render_color = jt.ones(*self.pix_coord.shape[:2], 3)
         self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
         self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果
@@ -180,8 +182,8 @@ class GaussianRenderer():
         for h in range(0, camera.image_height, TILE_SIZE):
             for w in range(0, camera.image_width, TILE_SIZE):
                 # check if the rectangle penetrate the tile
-                over_tl = rect[0][..., 0].clip(min=w), rect[0][..., 1].clip(min=h)
-                over_br = rect[1][..., 0].clip(max=w+TILE_SIZE-1), rect[1][..., 1].clip(max=h+TILE_SIZE-1) # 计算矩形区域与tile的交集的坐标
+                over_tl = rect[0][..., 0].clamp(min_v=w), rect[0][..., 1].clamp(min_v=h)
+                over_br = rect[1][..., 0].clamp(max_v=w+TILE_SIZE-1), rect[1][..., 1].clamp(max_v=h+TILE_SIZE-1) # 计算矩形区域与tile的交集的坐标
                 in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # 3D gaussian in the tile 找出与当天tile有交集的3D gaussian
                 
                 if not in_mask.sum() > 0: # 如果没有交集则跳过
@@ -192,7 +194,7 @@ class GaussianRenderer():
                 sorted_depths, index = jt.sort(depths[in_mask]) # 按照深度排序
                 sorted_means2D = means2D[in_mask][index] 
                 sorted_cov2d = cov2d[in_mask][index] # P 2 2
-                sorted_conic = sorted_cov2d.inverse() # inverse of variance
+                sorted_conic = jt.linalg.inv(sorted_cov2d) # inverse of variance
                 sorted_opacity = opacity[in_mask][index]
                 sorted_color = color[in_mask][index] # 根据排序结果获取对应的2D高斯分布的参数
                 dx = (tile_coord[:,None,:] - sorted_means2D[None,:]) # B P 2 # 计算当前tile中每个像素点与2D高斯分布中心点的距离
@@ -203,14 +205,20 @@ class GaussianRenderer():
                     + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 0, 1]
                     + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 1, 0])) # 计算每个像素在3D高斯分布中的权重
                 
-                alpha = (gauss_weight[..., None] * sorted_opacity[None]).clip(max=0.99) # B P 1，计算每个像素的透明度
+                alpha = (gauss_weight[..., None] * sorted_opacity[None]).clamp(max_v=0.99) # B P 1，计算每个像素的透明度
                 T = jt.concat([jt.ones_like(alpha[:,:1]), 1-alpha[:,1:]], dim=1).cumprod(dim=1) # 计算每个像素在每个3D高斯分布的累积透明度
                 acc_alpha = (alpha * T).sum(dim=1) # 计算每个像素的累积透明度
                 tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
                 tile_depth = ((T * alpha) * sorted_depths[None,:,None]).sum(dim=1) # 计算每个像素的颜色和深度
-                self.render_color[h:h+TILE_SIZE, w:w+TILE_SIZE] = tile_color.reshape(TILE_SIZE, TILE_SIZE, -1) 
-                self.render_depth[h:h+TILE_SIZE, w:w+TILE_SIZE] = tile_depth.reshape(TILE_SIZE, TILE_SIZE, -1)
-                self.render_alpha[h:h+TILE_SIZE, w:w+TILE_SIZE] = acc_alpha.reshape(TILE_SIZE, TILE_SIZE, -1) # 将计算出的结果存储到render_color, render_depth, render_alpha中
+                # 计算实际的tile高度和宽度
+                actual_tile_height = min(TILE_SIZE, self.render_color.shape[0] - h)
+                actual_tile_width = min(TILE_SIZE, self.render_color.shape[1] - w)
+                # 将tile_color存储到self.render_color的子区域中
+                self.render_color[h:h+actual_tile_height, w:w+actual_tile_width] = tile_color.reshape(actual_tile_height, actual_tile_width, -1)
+                self.render_depth[h:h+actual_tile_height, w:w+actual_tile_width] = tile_depth.reshape(actual_tile_height, actual_tile_width, -1)
+                self.render_alpha[h:h+actual_tile_height, w:w+actual_tile_width] = acc_alpha.reshape(actual_tile_height, actual_tile_width, -1)
+                jt.sync_all()
+                jt.gc()
 
         return {
             "render": self.render_color,
@@ -222,7 +230,7 @@ class GaussianRenderer():
         }
 
 
-    def forward(self, camera, pc, **kwargs): # 主要目的是将3DGaussian投影到2D图像上
+    def forward(self, camera, pc): # 主要目的是将3DGaussian投影到2D图像上
         means3D = pc.get_xyz
         opacity = pc.get_opacity
         scales = pc.get_scaling
