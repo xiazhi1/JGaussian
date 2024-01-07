@@ -90,4 +90,13 @@ jtorch和jittor版本对应又出现了问题 一直过不去jtorch测试用例�
 
 现在在尝试接torch_splatting的renderer部分到源代码中，torch_splatting没考虑对screenspace_points的梯度的保留与计算，之后再添加，先确保二者能对应上
 
-目前遇到的问题是不知道如何接[https://github.com/hbb1/torch-splatting/issues/3](https://github.com/hbb1/torch-splatting/issues/3)这个里面提到的相机焦距和渲染size的问题
+目前遇到的问题是不知道如何接[https://github.com/hbb1/torch-splatting/issues/3](https://github.com/hbb1/torch-splatting/issues/3)这个里面提到的相机焦距和渲染size的问题，已解决
+
+目前最炸裂的问题是跑完两次循环渲染后，直接就爆显存了，测试似乎不是两层循环轮数的问题，将tilesize从64升到256，只有大概4*6次循环，显存仍然占用了11G
+
+接下来的思路
+1. 转换到高显卡GPU上测试，如3090，测试显存是否足够
+2. 将输入数据集进行处理，选用图像size更小的数据集
+
+现在主要考虑对输入的数据集进行处理以降低显存占用，有以下几点思路
+1. 降低图像分辨率：直接降低每张图像的像素数量减少显存占用，在原项目中提供了命令行参数来调整输入图像的分辨率，--resolution / -r 默认为1，改为2 4 8 分别将图像分辨率降低到0.5 0.25 0.125 将分辨率调到1/8后 不再爆显存

@@ -178,7 +178,7 @@ class GaussianRenderer():
         self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
         self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果
 
-        TILE_SIZE = 64
+        TILE_SIZE = 64 # 用于分块渲染
         for h in range(0, camera.image_height, TILE_SIZE):
             for w in range(0, camera.image_width, TILE_SIZE):
                 # check if the rectangle penetrate the tile
@@ -188,13 +188,12 @@ class GaussianRenderer():
                 
                 if not in_mask.sum() > 0: # 如果没有交集则跳过
                     continue
-
-                P = in_mask.sum() # 计算交集的个数
+                # P = in_mask.sum() # 计算交集的个数
                 tile_coord = self.pix_coord[h:h+TILE_SIZE, w:w+TILE_SIZE].flatten(0,-2) # 获取当前tile的坐标并将其展平
                 sorted_depths, index = jt.sort(depths[in_mask]) # 按照深度排序
                 sorted_means2D = means2D[in_mask][index] 
-                sorted_cov2d = cov2d[in_mask][index] # P 2 2
-                sorted_conic = jt.linalg.inv(sorted_cov2d) # inverse of variance
+                # sorted_cov2d = cov2d[in_mask][index] # P 2 2
+                sorted_conic = jt.linalg.inv(cov2d[in_mask][index]) # inverse of variance
                 sorted_opacity = opacity[in_mask][index]
                 sorted_color = color[in_mask][index] # 根据排序结果获取对应的2D高斯分布的参数
                 dx = (tile_coord[:,None,:] - sorted_means2D[None,:]) # B P 2 # 计算当前tile中每个像素点与2D高斯分布中心点的距离
@@ -209,21 +208,16 @@ class GaussianRenderer():
                 T = jt.concat([jt.ones_like(alpha[:,:1]), 1-alpha[:,1:]], dim=1).cumprod(dim=1) # 计算每个像素在每个3D高斯分布的累积透明度
                 acc_alpha = (alpha * T).sum(dim=1) # 计算每个像素的累积透明度
                 tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
-                tile_depth = ((T * alpha) * sorted_depths[None,:,None]).sum(dim=1) # 计算每个像素的颜色和深度
-                # 计算实际的tile高度和宽度
-                actual_tile_height = min(TILE_SIZE, self.render_color.shape[0] - h)
-                actual_tile_width = min(TILE_SIZE, self.render_color.shape[1] - w)
+                # tile_depth = ((T * alpha) * sorted_depths[None,:,None]).sum(dim=1) # 计算每个像素的颜色和深度
                 # 将tile_color存储到self.render_color的子区域中
-                self.render_color[h:h+actual_tile_height, w:w+actual_tile_width] = tile_color.reshape(actual_tile_height, actual_tile_width, -1)
-                self.render_depth[h:h+actual_tile_height, w:w+actual_tile_width] = tile_depth.reshape(actual_tile_height, actual_tile_width, -1)
-                self.render_alpha[h:h+actual_tile_height, w:w+actual_tile_width] = acc_alpha.reshape(actual_tile_height, actual_tile_width, -1)
-                jt.sync_all()
-                jt.gc()
+                self.render_color[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_color.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
+                # self.render_depth[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_depth.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
+                # self.render_alpha[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = acc_alpha.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
 
         return {
-            "render": self.render_color,
-            "depth": self.render_depth,
-            "alpha": self.render_alpha,
+            "render": jt.transpose(self.render_color,(2,0,1)),
+            # "depth": self.render_depth,
+            # "alpha": self.render_alpha,
             "viewspace_points": camera.camera_center,
             "visibility_filter": radii > 0,
             "radii": radii

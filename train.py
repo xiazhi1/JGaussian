@@ -84,14 +84,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if (iteration - 1) == debug_from:
             pipe.debug = True
         render_pkg = gaussian_renderer.forward(viewpoint_cam,gaussians) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
-        image, depth,alpha,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["depth"], render_pkg["alpha"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 暂时没有viewspace_point_tensor
+        image,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 暂时没有viewspace_point_tensor
         # render_pkg = render(viewpoint_cam, gaussians, pipe, background) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
         # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         # 如果想把image转为jt.var必须先转为numpy，但是带梯度的tensor转为numpy会被丢弃梯度，进而导致无法反向传播
         # 最后得出的结论是因为jittor没有C++ API 无法与cuda交互进行渲染，导致项目无法进行下去，因为无梯度的tensor无法进行反向传播
         
         # Loss
-        gt_image = viewpoint_cam.original_image
+        gt_image = viewpoint_cam.original_image.astype(jt.float32) # 获取原始图像
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
         gaussians.optimizer.backward(loss) # 反向传播
