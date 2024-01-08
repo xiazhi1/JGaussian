@@ -213,7 +213,7 @@ class GaussianRenderer():
                 self.render_color[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_color.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
                 # self.render_depth[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_depth.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
                 # self.render_alpha[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = acc_alpha.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
-
+                del tile_color, acc_alpha, alpha, T, gauss_weight, sorted_opacity, sorted_color, sorted_means2D, sorted_conic, sorted_depths, index, dx, in_mask, over_tl, over_br, tile_coord
         return {
             "render": jt.transpose(self.render_color,(2,0,1)),
             # "depth": self.render_depth,

@@ -95,6 +95,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
         gaussians.optimizer.backward(loss) # 反向传播
+        grad = gaussians._xyz.opt_grad(gaussians.optimizer) # 获取梯度
         iter_end=time.time() # 用于计算每个iteration的时间
 
         with jt.no_grad(): 
@@ -195,6 +196,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 
 if __name__ == "__main__":
     os.environ['PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT'] = '2'
+    jt.flags.use_cuda = 1
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)

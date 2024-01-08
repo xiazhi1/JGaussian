@@ -18,7 +18,7 @@ import os
 from utils.system_utils import mkdir_p
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
-from simple_knn._C import distCUDA2
+from simple_kNN.distanceMetrics import distanceMetrics
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
@@ -129,11 +129,19 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         features = jt.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float() #创建一个零张量，用于存储特征信息，其形状为 (点的数量, 3, 球谐函数的维度)
         features[:, :3, 0 ] = fused_color #将点云颜色信息存储到特征张量的第一个通道中
         features[:, 3:, 1:] = 0.0 # 将特征张量的其他通道设置为零
-
         print("Number of points at initialisation : ", fused_point_cloud.shape[0])
-
-        dist2 = jt.maximum(jt.array(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()).cpu().numpy()), 0.0000001) # 计算点云中点之间的距离平方，并进行最小值截断，防止除以零,次模块要求tensor
-        scales = jt.log(jt.sqrt(dist2))[...,None].repeat(1, 3) # 计算每个点的缩放因子，以对应于点到点之间的距离
+        # 假设 pcd_points 是一个 N x 3 的张量，表示 N 个点的坐标
+        pcd_points = jt.array(np.asarray(pcd.points)).float32()
+        pcd_points = pcd_points[None, ...] # 转换为1 N 3的张量
+        # 找到每个点的最近的 K 个点 原cuda代码里也是3
+        K = 3
+        distances_squared, indices = jt.knn(pcd_points, pcd_points, K)
+        # 计算平均距离的平方
+        average_distances_squared = distances_squared.mean(dim=-1).squeeze(dim=0)
+        # 进行最小值截断，防止除以零
+        dist2 = jt.maximum(average_distances_squared, 0.0000001) 
+        # dist2 = jt.maximum(jt.array(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()).cpu().numpy()), 0.0000001) # 计算点云中点之间的距离平方，并进行最小值截断，防止除以零,次模块要求tensor
+        scales = jt.log(jt.sqrt(dist2))[...,None].repeat(1, 3) # 计算每个点的缩放因子，以对应于点到点之间的距离 只是一个初始值，偏差不会对结果造成很大影响
         rots = jt.zeros((fused_point_cloud.shape[0], 4)) # 创建一个零张量，用于存储旋转信息，其形状为 (点的数量, 4)
         rots[:, 0] = 1 # 将旋转张量的第一个通道设置为1，其余通道设置为零
 
