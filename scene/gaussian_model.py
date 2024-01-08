@@ -18,7 +18,6 @@ import os
 from utils.system_utils import mkdir_p
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
-from simple_kNN.distanceMetrics import distanceMetrics
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
@@ -154,11 +153,15 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._rotation = nn.Parameter(rots)
         self._opacity = nn.Parameter(opacities) # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
 
+
+    def parameters(self):
+        return [self._xyz, self._features_dc, self._features_rest, self._opacity, self._scaling, self._rotation]
+    
     def training_setup(self, training_args): # 该方法用于设置训练参数和优化器,因为jittor的特殊性，这里的参数设置与PyTorch有所不同。可能会多很多的参数设置
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
         self.denom = jt.zeros((self.get_xyz.shape[0], 1)) # 创建两个零张量，用于存储点云中每个点的梯度累积和梯度累积次数，其形状都为 (点的数量, 1)
-        self.screenspace_points = jt.zeros_like(self.get_xyz, dtype=self.get_xyz.dtype) + 0 # 创建一个和pc.get_xyz相同大小的全0张量，用于存储空间坐标的投影坐标，也就是模拟3DGaussian的投影
+        self.screenspace_points = jt.zeros((self.get_xyz.shape[0],2)) + 0 # 创建一个和pc.get_xyz相同大小的全0张量，用于存储空间坐标的投影坐标，也就是模拟3DGaussian的投影
         l = [
             self._xyz,
             self._features_dc,
@@ -169,7 +172,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             self.screenspace_points
         ]
         # 因为 jitor的优化器不支持参数组param_groups属性，不能直接为每个参数设置不同的学习率。所以暂时全部设为0.001
-        self.optimizer = jt.optim.Adam(l, lr=0.1, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
+        self.optimizer = jt.optim.Adam(l, lr=0.001, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
@@ -410,6 +413,6 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
         torch.cuda.empty_cache()   # 清空GPU缓存
 
-    def add_densification_stats(self,viewspace_point_tensor,update_filter):
-        self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
+    def add_densification_stats(self,viewspace_point_tensor_grad,update_filter):
+        self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor_grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1

@@ -54,7 +54,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0 # 用于计算每个iteration的loss
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress") # 用于显示进度条
     first_iter += 1
-    for iteration in range(first_iter, opt.iterations + 1):   # 测试与网络gui交互      
+    for iteration in range(first_iter, opt.iterations + 1):   # 测试与网络gui交互
+        jt.display_memory_info()      
         if network_gui.conn == None:
             network_gui.try_connect()
         while network_gui.conn != None:
@@ -89,14 +90,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         # 如果想把image转为jt.var必须先转为numpy，但是带梯度的tensor转为numpy会被丢弃梯度，进而导致无法反向传播
         # 最后得出的结论是因为jittor没有C++ API 无法与cuda交互进行渲染，导致项目无法进行下去，因为无梯度的tensor无法进行反向传播
-        
+        gaussians.screenspace_points.assign(viewspace_point_tensor) # 更新视空间坐标
         # Loss
         gt_image = viewpoint_cam.original_image.astype(jt.float32) # 获取原始图像
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
         gaussians.optimizer.backward(loss) # 反向传播
-        grad = gaussians._xyz.opt_grad(gaussians.optimizer) # 获取梯度
+        grad = gaussians.screenspace_points.opt_grad(gaussians.optimizer) # 获取梯度
+        viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1) # 由于视空间坐标是三维的，而梯度是二维的，所以需要在梯度后面加一个0
+        viewspace_point_tensor_grad = jt.array(viewspace_point_tensor_grad, dtype=viewspace_point_tensor.dtype) # 转换为tensor
         iter_end=time.time() # 用于计算每个iteration的时间
+    
 
         with jt.no_grad(): 
             # Progress bar
@@ -117,7 +121,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = jt.maximum(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
-                gaussians.add_densification_stats(viewspace_point_tensor,visibility_filter) # 更新视空间坐标和可见性
+                gaussians.add_densification_stats(viewspace_point_tensor_grad,visibility_filter) # 更新视空间坐标和可见性
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0: # 如果当前迭代大于指定的开始密集化的迭代数，并且当前迭代是密集化间隔的倍数，那么就进行密集化和修剪操作
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
@@ -134,6 +138,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+
+        jt.sync_all()
+        jt.display_memory_info()
+        jt.clean()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:

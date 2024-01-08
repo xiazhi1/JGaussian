@@ -177,7 +177,8 @@ class GaussianRenderer():
         self.render_color = jt.ones(*self.pix_coord.shape[:2], 3)
         self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
         self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果
-
+        # screenspace_points = jt.concat([means2D,jt.zeros([means2D.shape[0], 1])],dim=1) # 这个地方有问题 感觉应该就是计算出来的means2D 然后想办法对means2D保留梯度即可，但其type是[N,2] 需要转到[N,3]做后续操作
+        # viewspace_point_tensor = jt.array(screenspace_points)
         TILE_SIZE = 64 # 用于分块渲染
         for h in range(0, camera.image_height, TILE_SIZE):
             for w in range(0, camera.image_width, TILE_SIZE):
@@ -188,7 +189,6 @@ class GaussianRenderer():
                 
                 if not in_mask.sum() > 0: # 如果没有交集则跳过
                     continue
-                # P = in_mask.sum() # 计算交集的个数
                 tile_coord = self.pix_coord[h:h+TILE_SIZE, w:w+TILE_SIZE].flatten(0,-2) # 获取当前tile的坐标并将其展平
                 sorted_depths, index = jt.sort(depths[in_mask]) # 按照深度排序
                 sorted_means2D = means2D[in_mask][index] 
@@ -208,17 +208,13 @@ class GaussianRenderer():
                 T = jt.concat([jt.ones_like(alpha[:,:1]), 1-alpha[:,1:]], dim=1).cumprod(dim=1) # 计算每个像素在每个3D高斯分布的累积透明度
                 acc_alpha = (alpha * T).sum(dim=1) # 计算每个像素的累积透明度
                 tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
-                # tile_depth = ((T * alpha) * sorted_depths[None,:,None]).sum(dim=1) # 计算每个像素的颜色和深度
                 # 将tile_color存储到self.render_color的子区域中
                 self.render_color[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_color.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
-                # self.render_depth[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_depth.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
-                # self.render_alpha[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = acc_alpha.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
                 del tile_color, acc_alpha, alpha, T, gauss_weight, sorted_opacity, sorted_color, sorted_means2D, sorted_conic, sorted_depths, index, dx, in_mask, over_tl, over_br, tile_coord
+            
         return {
             "render": jt.transpose(self.render_color,(2,0,1)),
-            # "depth": self.render_depth,
-            # "alpha": self.render_alpha,
-            "viewspace_points": camera.camera_center,
+            "viewspace_points": means2D,
             "visibility_filter": radii > 0,
             "radii": radii
         }
