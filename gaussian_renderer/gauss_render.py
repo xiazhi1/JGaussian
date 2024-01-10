@@ -1,9 +1,7 @@
-import pdb
 import jittor as jt
 from jittor import nn as nn
 from jittor import init 
 import math
-# from einops import reduce
 
 def inverse_sigmoid(x):
     return jt.log(x/(1-x))
@@ -158,8 +156,8 @@ class GaussianRenderer():
         self.active_sh_degree = active_sh_degree
         self.debug = False
         self.white_bkgd = white_bkgd
-        y, x = jt.meshgrid(jt.arange(256), jt.arange(256))
-        self.pix_coord = jt.stack((x, y), dim=-1) # 用此来实现torch.meshgrid功能
+        # y, x = jt.meshgrid(jt.arange(256), jt.arange(256))
+        # self.pix_coord = jt.stack((x, y), dim=-1) # 用此来实现torch.meshgrid功能
         
     
     def build_color(self, means3D, shs, camera): # 计算每个3D点的颜色
@@ -170,16 +168,16 @@ class GaussianRenderer():
         color = jt.minimum(1.0, color) # 将颜色值调整到[0, 1]范围内
         return color
     
-    def render(self, camera, means2D, cov2d, color, opacity, depths):
+    def render(self, camera, means2D, cov2d, color, opacity, depths,pc):
         radii = get_radius(cov2d)
         rect = get_rect(means2D, radii, width=camera.image_width, height=camera.image_height)
         self.pix_coord = jt.stack(jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width)), dim=-1) # change to image size
         self.render_color = jt.ones(*self.pix_coord.shape[:2], 3)
-        self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
-        self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果
-        # screenspace_points = jt.concat([means2D,jt.zeros([means2D.shape[0], 1])],dim=1) # 这个地方有问题 感觉应该就是计算出来的means2D 然后想办法对means2D保留梯度即可，但其type是[N,2] 需要转到[N,3]做后续操作
-        # viewspace_point_tensor = jt.array(screenspace_points)
-        TILE_SIZE = 64 # 用于分块渲染
+        # self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
+        # self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果
+
+        
+        TILE_SIZE = 16 # 用于分块渲染
         for h in range(0, camera.image_height, TILE_SIZE):
             for w in range(0, camera.image_width, TILE_SIZE):
                 # check if the rectangle penetrate the tile
@@ -192,8 +190,8 @@ class GaussianRenderer():
                 tile_coord = self.pix_coord[h:h+TILE_SIZE, w:w+TILE_SIZE].flatten(0,-2) # 获取当前tile的坐标并将其展平
                 sorted_depths, index = jt.sort(depths[in_mask]) # 按照深度排序
                 sorted_means2D = means2D[in_mask][index] 
-                # sorted_cov2d = cov2d[in_mask][index] # P 2 2
-                sorted_conic = jt.linalg.inv(cov2d[in_mask][index]) # inverse of variance
+                sorted_cov2d = cov2d[in_mask][index] # P 2 2
+                sorted_conic = jt.linalg.inv(sorted_cov2d) # inverse of variance
                 sorted_opacity = opacity[in_mask][index]
                 sorted_color = color[in_mask][index] # 根据排序结果获取对应的2D高斯分布的参数
                 dx = (tile_coord[:,None,:] - sorted_means2D[None,:]) # B P 2 # 计算当前tile中每个像素点与2D高斯分布中心点的距离
@@ -209,11 +207,25 @@ class GaussianRenderer():
                 acc_alpha = (alpha * T).sum(dim=1) # 计算每个像素的累积透明度
                 tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
                 # 将tile_color存储到self.render_color的子区域中
-                self.render_color[h:h+min(TILE_SIZE, self.render_color.shape[0] - h), w:w+min(TILE_SIZE, self.render_color.shape[1] - w)] = tile_color.reshape(min(TILE_SIZE, self.render_color.shape[0] - h), min(TILE_SIZE, self.render_color.shape[1] - w), -1)
-                del tile_color, acc_alpha, alpha, T, gauss_weight, sorted_opacity, sorted_color, sorted_means2D, sorted_conic, sorted_depths, index, dx, in_mask, over_tl, over_br, tile_coord
-            
+                # 计算实际的行数和列数
+                remaining_rows = min(TILE_SIZE, self.render_color.shape[0] - h)
+                remaining_cols = min(TILE_SIZE, self.render_color.shape[1] - w)
+                # 将 tile_color 存储到 self.render_color 的子区域中
+                self.render_color[h:h+remaining_rows, w:w+remaining_cols] = tile_color.reshape(remaining_rows, remaining_cols, -1)
+                # loss = self.render_color.sum()
+                # pc.optimizer.backward(loss)
+                # print("loss:",loss)
+                
+
+        # jt.display_memory_info()
+        image = jt.transpose(self.render_color,(2,0,1))
+        # # # test to find grad error
+        # loss = self.render_color.sum()
+        # pc.optimizer.backward(loss)
+        # for p in pc.parameters():
+        #     grad = p.opt_grad(pc.optimizer)   
         return {
-            "render": jt.transpose(self.render_color,(2,0,1)),
+            "render": image,
             "viewspace_points": means2D,
             "visibility_filter": radii > 0,
             "radii": radii
@@ -232,7 +244,7 @@ class GaussianRenderer():
                 projmatrix=camera.projection_matrix)
         depths = mean_view[:,2] # 提取视图空间中的深度信息
         
-        color = self.build_color(means3D=means3D, shs=shs, camera=camera) # 计算每个3D点的颜色
+        color = self.build_color(means3D=means3D, shs=shs, camera=camera) # 计算每个3D点的颜色 测试发现guassian_xyz相对于color的梯度是0，但是torch-spltting中相对梯度也是0,其他的shs也就是feature都有梯度
         
         cov3d = build_covariance_3d(scales, rotations)
             
@@ -249,6 +261,10 @@ class GaussianRenderer():
         mean_coord_y = ((mean_ndc[..., 1] + 1) * camera.image_height - 1.0) * 0.5
         means2D = jt.stack([mean_coord_x, mean_coord_y], dim=-1) # 用OPENGL的坐标系计算2D高斯分布的p屏幕中心点坐标
         
+        # # # # test to find grad error
+        # loss = cov3d.sum()
+        # pc.optimizer.backward(loss)
+
         rets = self.render(
             camera = camera, 
             means2D=means2D,
@@ -256,6 +272,7 @@ class GaussianRenderer():
             color=color,
             opacity=opacity, 
             depths=depths,
+            pc=pc,
         )
 
         return rets

@@ -11,7 +11,6 @@
 
 import jittor as jt
 import numpy as np
-import torch
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from jittor import nn
 import os
@@ -146,12 +145,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
         opacities = inverse_sigmoid(0.1 * jt.ones((fused_point_cloud.shape[0], 1), dtype=jt.float)) # 创建一个张量，用于存储点的不透明度信息，其形状为 (点的数量, 1)，并将其初始化为0.1
 
-        self._xyz = nn.Parameter(fused_point_cloud) # 将点云坐标张量转换为可优化的参数
-        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous()) # 将特征张量的第一个通道转换为可优化的参数(即前面提到的点云颜色特征)
-        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous()) # 将特征张量的其他通道转换为可优化的参数，处理方式与上面类似，都是首先选择通道，然后转置，最后用方法确保内存连续
-        self._scaling = nn.Parameter(scales)
-        self._rotation = nn.Parameter(rots)
-        self._opacity = nn.Parameter(opacities) # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
+        self._xyz = fused_point_cloud # 将点云坐标张量转换为可优化的参数
+        self._features_dc = features[:,:,0:1].transpose(1, 2).contiguous() # 将特征张量的第一个通道转换为可优化的参数(即前面提到的点云颜色特征)
+        self._features_rest = features[:,:,1:].transpose(1, 2).contiguous() # 将特征张量的其他通道转换为可优化的参数，处理方式与上面类似，都是首先选择通道，然后转置，最后用方法确保内存连续
+        self._scaling = scales
+        self._rotation = rots
+        self._opacity = opacities # 以上三行代码将缩放、旋转和不透明度信息转换为可优化的参数
 
 
     def parameters(self):
@@ -169,10 +168,10 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             self._opacity,
             self._scaling,
             self._rotation,
-            self.screenspace_points
+            self.screenspace_points,
         ]
         # 因为 jitor的优化器不支持参数组param_groups属性，不能直接为每个参数设置不同的学习率。所以暂时全部设为0.001
-        self.optimizer = jt.optim.Adam(l, lr=0.001, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
+        self.optimizer = jt.optim.Adam(l, lr=0.01, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
@@ -328,12 +327,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
                 stored_state["exp_avg_sq"] = jt.concat((stored_state["exp_avg_sq"], jt.zeros_like(extension_tensor)), dim=0)
 
                 del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter(jt.concat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
+                group["params"][0] = nn.Parameter(jt.concat((group["params"][0], extension_tensor), dim=0))
                 self.optimizer.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
-                group["params"][0] = nn.Parameter(jt.concat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
+                group["params"][0] = nn.Parameter(jt.concat((group["params"][0], extension_tensor), dim=0))
                 optimizable_tensors[group["name"]] = group["params"][0]
 
         return optimizable_tensors
@@ -354,9 +353,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"] # 将新的优化器信息添加到高斯模型中
 
-        self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1)).cuda()
-        self.denom = jt.zeros((self.get_xyz.shape[0], 1)).cuda()
-        self.max_radii2D = jt.zeros((self.get_xyz.shape[0])).cuda() # 重置梯度累积和梯度累积次数，以及最大2D半径便于后续密集化和修剪
+        self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
+        self.denom = jt.zeros((self.get_xyz.shape[0], 1))
+        self.max_radii2D = jt.zeros((self.get_xyz.shape[0])) # 重置梯度累积和梯度累积次数，以及最大2D半径便于后续密集化和修剪
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
@@ -384,9 +383,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent): # 该方法用于对梯度张量中的点直接复制满足条件的点进行密集化
         # Extract points that satisfy the gradient condition
-        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
-        selected_pts_mask = torch.logical_and(selected_pts_mask,
-                                              torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent) #通过计算梯度范数并与阈值比较，生成掩码，再加以操作得到最终掩码
+        selected_pts_mask = jt.where(jt.norm(grads, dim=-1) >= grad_threshold, True, False)
+        selected_pts_mask = jt.logical_and(selected_pts_mask,
+                                              jt.max(self.get_scaling, dim=1).data <= self.percent_dense*scene_extent) #通过计算梯度范数并与阈值比较，生成掩码，再加以操作得到最终掩码
         
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
@@ -408,10 +407,8 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         if max_screen_size: # 如果场景最大尺寸不为空，则将大点的掩码和缩放因子大于场景范围的点添加到修剪掩码中
             big_points_vs = self.max_radii2D > max_screen_size 
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
-            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+            prune_mask = jt.logical_or(jt.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask) # 修剪掩码中的点
-
-        torch.cuda.empty_cache()   # 清空GPU缓存
 
     def add_densification_stats(self,viewspace_point_tensor_grad,update_filter):
         self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor_grad[update_filter,:2], dim=-1, keepdim=True)

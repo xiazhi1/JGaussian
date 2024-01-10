@@ -38,8 +38,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # tb_writer = prepare_output_and_logger(dataset) # 用于确定输出的位置和在tensorboard上记录的参数
     gaussians = GaussianModel(dataset.sh_degree) # 创建gaussian对象
     scene = Scene(dataset, gaussians) # 创建scene对象
-
-    gaussians.training_setup(opt) # 设置gaussian对象的训练参数  
+    gaussians.training_setup(opt) # 设置gaussian对象的训练参数
     if checkpoint:
         (model_params, first_iter) = jt.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -54,8 +53,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0 # 用于计算每个iteration的loss
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress") # 用于显示进度条
     first_iter += 1
-    for iteration in range(first_iter, opt.iterations + 1):   # 测试与网络gui交互
-        jt.display_memory_info()      
+    for iteration in range(first_iter, opt.iterations + 1):   # 测试与网络gui交互      
         if network_gui.conn == None:
             network_gui.try_connect()
         while network_gui.conn != None:
@@ -91,12 +89,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # 如果想把image转为jt.var必须先转为numpy，但是带梯度的tensor转为numpy会被丢弃梯度，进而导致无法反向传播
         # 最后得出的结论是因为jittor没有C++ API 无法与cuda交互进行渲染，导致项目无法进行下去，因为无梯度的tensor无法进行反向传播
         gaussians.screenspace_points.assign(viewspace_point_tensor) # 更新视空间坐标
+        # gaussians.optimizer.zero_grad() # 梯度清零
+
+        # # # test code to verify where grad is lost
+        # loss = image.sum()
+        # gaussians.optimizer.backward(image) # 反向传播 发现此处梯度也是很多0.....
+
         # Loss
         gt_image = viewpoint_cam.original_image.astype(jt.float32) # 获取原始图像
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
         gaussians.optimizer.backward(loss) # 反向传播
+        # grad = jt.grad(loss, viewspace_point_tensor)
         grad = gaussians.screenspace_points.opt_grad(gaussians.optimizer) # 获取梯度
+
         viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1) # 由于视空间坐标是三维的，而梯度是二维的，所以需要在梯度后面加一个0
         viewspace_point_tensor_grad = jt.array(viewspace_point_tensor_grad, dtype=viewspace_point_tensor.dtype) # 转换为tensor
         iter_end=time.time() # 用于计算每个iteration的时间
@@ -133,15 +139,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
-                gaussians.optimizer.zero_grad()
+                gaussians.optimizer.zero_grad() # 梯度清零
+                
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-        jt.sync_all()
-        jt.display_memory_info()
-        jt.clean()
+        # jt.clean_graph()
+        # jt.sync_all()
+        # jt.gc()
+        # jt.display_memory_info()
+        
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
