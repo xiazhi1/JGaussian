@@ -37,7 +37,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self.opacity_activation = jt.sigmoid
         self.inverse_opacity_activation = inverse_sigmoid
 
-        self.rotation_activation = jt.misc.normalize
+        self.rotation_activation = jt.normalize
 
 
     def __init__(self, sh_degree : int):
@@ -172,10 +172,10 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         ]
         # 因为 jitor的优化器不支持参数组param_groups属性，不能直接为每个参数设置不同的学习率。所以暂时全部设为0.001
         self.optimizer = jt.optim.Adam(l, lr=0.01, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
-        self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
-                                                    lr_final=training_args.position_lr_final*self.spatial_lr_scale,
-                                                    lr_delay_mult=training_args.position_lr_delay_mult,
-                                                    max_steps=training_args.position_lr_max_steps) # 创建一个学习率调度器，用于调整点云坐标的学习率
+        # self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
+        #                                             lr_final=training_args.position_lr_final*self.spatial_lr_scale,
+        #                                             lr_delay_mult=training_args.position_lr_delay_mult,
+        #                                             max_steps=training_args.position_lr_max_steps) # 创建一个学习率调度器，用于调整点云坐标的学习率
 
     def update_learning_rate(self, iteration): # 该方法用于更新优化器中的学习率
         ''' Learning rate scheduling per step '''

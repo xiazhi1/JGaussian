@@ -40,7 +40,7 @@ def build_rotation(r):
 
 
 def build_scaling_rotation(s, r): # 该函数用于计算3D高斯分布的缩放和旋转矩阵
-    L = jt.zeros((s.shape[0], 3, 3), dtype=jt.float)
+    L = jt.zeros((s.shape[0], 3, 3), dtype=jt.float32)
     R = build_rotation(r)
 
     L[:,0,0] = s[:,0]
@@ -95,7 +95,7 @@ def build_covariance_2d(
     # Eq.29 locally affine transform 
     # perspective transform is not affine so we approximate with first-order taylor expansion
     # notice that we multiply by the intrinsic so that the variance is at the sceen space
-    J = jt.zeros(mean3d.shape[0], 3, 3).to(mean3d)
+    J = jt.zeros(mean3d.shape[0], 3, 3)
     J[..., 0, 0] = 1 / tz * focal_x
     J[..., 0, 2] = -tx / (tz * tz) * focal_x
     J[..., 1, 1] = 1 / tz * focal_y
@@ -164,8 +164,7 @@ class GaussianRenderer():
         rays_o = camera.camera_center
         rays_d = means3D - rays_o # 计算每个3D点到相机中心的方向向量
         color = eval_sh(self.active_sh_degree, shs.permute(0,2,1), rays_d) # 使用eval_sh函数将球谐函数转换为每个方向的RGB颜色
-        color = jt.maximum(0.0, color + 0.5)
-        color = jt.minimum(1.0, color) # 将颜色值调整到[0, 1]范围内
+        color = (color+0.5).clamp(min_v=0.0) # 将颜色值调整到[0, 1]范围内
         return color
     
     def render(self, camera, means2D, cov2d, color, opacity, depths,pc):
@@ -219,7 +218,7 @@ class GaussianRenderer():
 
         # jt.display_memory_info()
         image = jt.transpose(self.render_color,(2,0,1))
-        # # # test to find grad error
+        # # test to find grad error
         # loss = self.render_color.sum()
         # pc.optimizer.backward(loss)
         # for p in pc.parameters():
@@ -237,7 +236,7 @@ class GaussianRenderer():
         opacity = pc.get_opacity
         scales = pc.get_scaling
         rotations = pc.get_rotation
-        shs = pc.get_features
+        shs = pc.get_features # 和torch-splatting有区别 但和GaussianSplatting一致 应该是数据集不同引起的
             
         mean_ndc, mean_view, in_mask = projection_ndc(means3D, 
                 viewmatrix=camera.world_view_transform, 

@@ -62,7 +62,7 @@ def get_expon_lr_func(
     return helper
 
 def strip_lowerdiag(L):
-    uncertainty = torch.zeros((L.shape[0], 6), dtype=torch.float, device="cuda")
+    uncertainty = jt.zeros((L.shape[0], 6), dtype=jt.float32)
 
     uncertainty[:, 0] = L[:, 0, 0]
     uncertainty[:, 1] = L[:, 0, 1]
@@ -76,11 +76,11 @@ def strip_symmetric(sym):
     return strip_lowerdiag(sym)
 
 def build_rotation(r):
-    norm = torch.sqrt(r[:,0]*r[:,0] + r[:,1]*r[:,1] + r[:,2]*r[:,2] + r[:,3]*r[:,3])
+    norm = jt.sqrt(r[:,0]*r[:,0] + r[:,1]*r[:,1] + r[:,2]*r[:,2] + r[:,3]*r[:,3])
 
     q = r / norm[:, None]
 
-    R = torch.zeros((q.size(0), 3, 3), device='cuda')
+    R = jt.zeros((q.size(0), 3, 3))
 
     r = q[:, 0]
     x = q[:, 1]
@@ -99,7 +99,7 @@ def build_rotation(r):
     return R
 
 def build_scaling_rotation(s, r):
-    L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")
+    L = jt.zeros((s.shape[0], 3, 3), dtype=jt.float32)
     R = build_rotation(r)
 
     L[:,0,0] = s[:,0]
