@@ -130,7 +130,8 @@ torchsplatting里面利用means2D.retain_grad保留得到的梯度 明显不是�
 
 torchsplatting里面的梯度测试后每个Gaussian点都有值 16384个点16384个梯度，但是源代码中54000多个点 只有14000个有值，JGaussian里面52000多个点 只有2858个有梯度 ------screenspace_points
 
-JGaussian 2890/54000有梯度 torch_splatting 16384/16384 有梯度 GaussianSplatting 14058/54000
+JGaussian 2890/54000有梯度 torch_splatting 16384/16384 有梯度 GaussianSplatting 14058/54000 Gaussian_torch 15221第一次 28787第二次 
+
 
 ### 优化器参数梯度全为0
 
@@ -169,3 +170,8 @@ in-place 操作可能会覆盖计算梯度所需的值。
 
 不确定问题出在哪 先验证一下torch-splatting和Gaussian-splatting和在一起到底能不能用 如果可以 可能是jittor里面的问题 如果不可以，感觉还得自己写光栅化器
 
+验证结果 torch_spltting的光栅化渲染器是可用的 与official代码结合后的梯度都是正确的 所以问题应该还是出在jittor搭建的JGaussian上面 而非torch_splatting的渲染器上面 
+
+目前思路是逐步比对render部分JGaussian与Gaussian_torch之间的差异 找出哪个数据有问题 现在发现的是因为knn计算初始化的偏差 导致scales之间有区别 进而导致cov3d和cov2d有区别 不过差别不大 最后会导致render函数中 radii rect，dx,gauss_weight的计算有所区别 不过逻辑应该是对的 只是划分出来的矩形区域有点区别 导致Gaussian点的多少和位置有点变化，最后的color之前比torch版本大概大四倍左右
+
+有梯度啦！！！！ 问题出在对pixel_coord的初始化不对，改正后有14000个点有梯度 和Gaussiansplatting 几乎一致 现在的问题转为优化器的问题 因为多次迭代后 数据没有更新

@@ -170,7 +170,9 @@ class GaussianRenderer():
     def render(self, camera, means2D, cov2d, color, opacity, depths,pc):
         radii = get_radius(cov2d)
         rect = get_rect(means2D, radii, width=camera.image_width, height=camera.image_height)
-        self.pix_coord = jt.stack(jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width)), dim=-1) # change to image size
+        y,x = jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width))
+        self.pix_coord = jt.stack((x, y), dim=-1) # 用此来实现torch.meshgrid功能
+        # self.pix_coord = jt.stack(jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width)), dim=-1)[:, ::-1] # change to image size
         self.render_color = jt.ones(*self.pix_coord.shape[:2], 3)
         # self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
         # self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果

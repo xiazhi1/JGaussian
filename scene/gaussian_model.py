@@ -143,7 +143,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         rots = jt.zeros((fused_point_cloud.shape[0], 4)) # 创建一个零张量，用于存储旋转信息，其形状为 (点的数量, 4)
         rots[:, 0] = 1 # 将旋转张量的第一个通道设置为1，其余通道设置为零
 
-        opacities = inverse_sigmoid(0.1 * jt.ones((fused_point_cloud.shape[0], 1), dtype=jt.float)) # 创建一个张量，用于存储点的不透明度信息，其形状为 (点的数量, 1)，并将其初始化为0.1
+        opacities = inverse_sigmoid(0.1 * jt.ones((fused_point_cloud.shape[0], 1), dtype=jt.float32)) # 创建一个张量，用于存储点的不透明度信息，其形状为 (点的数量, 1)，并将其初始化为0.1
 
         self._xyz = fused_point_cloud # 将点云坐标张量转换为可优化的参数
         self._features_dc = features[:,:,0:1].transpose(1, 2).contiguous() # 将特征张量的第一个通道转换为可优化的参数(即前面提到的点云颜色特征)
@@ -367,7 +367,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
                                               jt.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent) # 生成掩码
 
         stds = self.get_scaling[selected_pts_mask].repeat(N,1)
-        means =jt.zeros((stds.size(0), 3)).cuda()
+        means =jt.zeros((stds.size(0), 3))
         samples = jt.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         new_xyz = nn.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
@@ -378,7 +378,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1) # 利用掩码提取所有满足条件的点，并进行N次切割得到新的位置、缩放和旋转信息
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
 
-        prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum(), dtype=bool).cuda()))
+        prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum(), dtype=bool)))
         self.prune_points(prune_filter) # 生成修建掩码后修剪掩码中的点
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent): # 该方法用于对梯度张量中的点直接复制满足条件的点进行密集化

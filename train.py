@@ -83,11 +83,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if (iteration - 1) == debug_from:
             pipe.debug = True
         render_pkg = gaussian_renderer.forward(viewpoint_cam,gaussians) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
-        image,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 暂时没有viewspace_point_tensor
+        image,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 获取渲染结果
+
+
         # render_pkg = render(viewpoint_cam, gaussians, pipe, background) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
         # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         # 如果想把image转为jt.var必须先转为numpy，但是带梯度的tensor转为numpy会被丢弃梯度，进而导致无法反向传播
         # 最后得出的结论是因为jittor没有C++ API 无法与cuda交互进行渲染，导致项目无法进行下去，因为无梯度的tensor无法进行反向传播
+
         gaussians.screenspace_points.assign(viewspace_point_tensor) # 更新视空间坐标
         # gaussians.optimizer.zero_grad() # 梯度清零
 
@@ -103,10 +106,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # grad = jt.grad(loss, viewspace_point_tensor)
         grad = gaussians.screenspace_points.opt_grad(gaussians.optimizer) # 获取梯度
          
-        # test to get the non   zero grad
-        # non_zero_row_indices = jt.any(grad != 0, dim=1)
-        # non_zero_rows = grad[non_zero_row_indices]
-        # print(non_zero_rows)
+        # test to get the non zero grad
+        non_zero_row_indices = jt.any(grad != 0, dim=1)
+        non_zero_rows = grad[non_zero_row_indices]
+        print(non_zero_rows)
 
 
         viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1) # 由于视空间坐标是三维的，而梯度是二维的，所以需要在梯度后面加一个0
