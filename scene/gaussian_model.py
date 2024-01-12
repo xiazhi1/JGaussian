@@ -162,16 +162,15 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self.denom = jt.zeros((self.get_xyz.shape[0], 1)) # 创建两个零张量，用于存储点云中每个点的梯度累积和梯度累积次数，其形状都为 (点的数量, 1)
         self.screenspace_points = jt.zeros((self.get_xyz.shape[0],2)) + 0 # 创建一个和pc.get_xyz相同大小的全0张量，用于存储空间坐标的投影坐标，也就是模拟3DGaussian的投影
         l = [
-            self._xyz,
-            self._features_dc,
-            self._features_rest,
-            self._opacity,
-            self._scaling,
-            self._rotation,
-            self.screenspace_points,
-        ]
-        # 因为 jitor的优化器不支持参数组param_groups属性，不能直接为每个参数设置不同的学习率。所以暂时全部设为0.001
-        self.optimizer = jt.optim.Adam(l, lr=0.01, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
+            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
+            {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
+            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
+            {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
+            {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
+            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
+            {'params': [self.screenspace_points], 'lr': 0.0, "name": "screenspace_points"}
+        ] # 创建一个列表，用于存储所有可优化的参数，以及它们的学习率和名称
+        self.optimizer = jt.optim.Adam(l, lr=0.0, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
         # self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
         #                                             lr_final=training_args.position_lr_final*self.spatial_lr_scale,
         #                                             lr_delay_mult=training_args.position_lr_delay_mult,
@@ -317,22 +316,22 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def cat_tensors_to_optimizer(self, tensors_dict):
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups:
+        for group in self.optimizer.param_groups[:-1]: # 为了排除screenspacepoints，这里使用了[:-1]
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
-            stored_state = self.optimizer.state.get(group['params'][0], None)
+            stored_state = self.optimizer.state_dict().get(id(group['params'][0]), None)
             if stored_state is not None:
 
                 stored_state["exp_avg"] = jt.concat((stored_state["exp_avg"], jt.zeros_like(extension_tensor)), dim=0)
                 stored_state["exp_avg_sq"] = jt.concat((stored_state["exp_avg_sq"], jt.zeros_like(extension_tensor)), dim=0)
 
                 del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter(jt.concat((group["params"][0], extension_tensor), dim=0))
+                group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
                 self.optimizer.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
-                group["params"][0] = nn.Parameter(jt.concat((group["params"][0], extension_tensor), dim=0))
+                group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
                 optimizable_tensors[group["name"]] = group["params"][0]
 
         return optimizable_tensors

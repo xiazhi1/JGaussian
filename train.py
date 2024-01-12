@@ -10,7 +10,6 @@
 #
 
 import os,time
-import torch
 import jittor as jt
 import argparse
 from random import randint
@@ -107,18 +106,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         grad = gaussians.screenspace_points.opt_grad(gaussians.optimizer) # 获取梯度
          
         # test to get the non zero grad
-        non_zero_row_indices = jt.any(grad != 0, dim=1)
-        non_zero_rows = grad[non_zero_row_indices]
-        print(non_zero_rows)
+        # non_zero_row_indices = jt.any(grad != 0, dim=1)
+        # non_zero_rows = grad[non_zero_row_indices]
+        # print(non_zero_rows)
 
 
         viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1) # 由于视空间坐标是三维的，而梯度是二维的，所以需要在梯度后面加一个0
         viewspace_point_tensor_grad = jt.array(viewspace_point_tensor_grad, dtype=viewspace_point_tensor.dtype) # 转换为tensor
         iter_end=time.time() # 用于计算每个iteration的时间
 
-        # # test for save image
-        # jt.save_image(image, "render_test.png")
-        # jt.save_image(gt_image, "gt_test.png")
+        
     
 
         with jt.no_grad(): 
@@ -136,28 +133,30 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
-            # # Densification
-            # if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
-            #     # Keep track of max radii in image-space for pruning
-            #     gaussians.max_radii2D[visibility_filter] = jt.maximum(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
-            #     gaussians.add_densification_stats(viewspace_point_tensor_grad,visibility_filter) # 更新视空间坐标和可见性
+            # Densification
+            if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
+                # Keep track of max radii in image-space for pruning
+                gaussians.max_radii2D[visibility_filter] = jt.maximum(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
+                gaussians.add_densification_stats(viewspace_point_tensor_grad,visibility_filter) # 更新视空间坐标和可见性
 
-            #     if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0: # 如果当前迭代大于指定的开始密集化的迭代数，并且当前迭代是密集化间隔的倍数，那么就进行密集化和修剪操作
-            #         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-            #         gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0: # 如果当前迭代大于指定的开始密集化的迭代数，并且当前迭代是密集化间隔的倍数，那么就进行密集化和修剪操作
+                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
                 
-            #     if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter): # 如果当前迭代是透明度重置间隔的倍数，或者是白色背景并且当前迭代等于指定的开始密集化的迭代数，那么就重置透明度
-            #         gaussians.reset_opacity()
+                if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter): # 如果当前迭代是透明度重置间隔的倍数，或者是白色背景并且当前迭代等于指定的开始密集化的迭代数，那么就重置透明度
+                    gaussians.reset_opacity()
 
-            # Optimizer step
-            if iteration < opt.iterations:
-                gaussians.optimizer.step()
-                gaussians.optimizer.zero_grad() # 梯度清零
                 
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+
+        # Optimizer step
+        if iteration < opt.iterations:
+            gaussians.optimizer.step()
+            gaussians.optimizer.zero_grad() # 梯度清零
+
 
         # jt.clean_graph()
         # jt.sync_all()

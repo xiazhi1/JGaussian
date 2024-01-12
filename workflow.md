@@ -175,3 +175,11 @@ in-place 操作可能会覆盖计算梯度所需的值。
 目前思路是逐步比对render部分JGaussian与Gaussian_torch之间的差异 找出哪个数据有问题 现在发现的是因为knn计算初始化的偏差 导致scales之间有区别 进而导致cov3d和cov2d有区别 不过差别不大 最后会导致render函数中 radii rect，dx,gauss_weight的计算有所区别 不过逻辑应该是对的 只是划分出来的矩形区域有点区别 导致Gaussian点的多少和位置有点变化，最后的color之前比torch版本大概大四倍左右
 
 有梯度啦！！！！ 问题出在对pixel_coord的初始化不对，改正后有14000个点有梯度 和Gaussiansplatting 几乎一致 现在的问题转为优化器的问题 因为多次迭代后 数据没有更新
+
+### 优化器参数只更新一次
+
+找到问题 问题出在把优化器更新步骤放在了with jt.no_grad里面 jittor的no_grad会把优化器参数也变成0 而且不能再改回去
+
+现在开始做densification
+
+现在有个问题，就是Gaussian_splatting的densification其实在第3次迭代就由200多个点需要修剪 而Gaussian_torch和JGaussian都在第三次迭代中没有点要修剪 非常奇怪 可能是梯度阈值设置的问题 另外 GaussinSplatting第一次迭代就有150多个点需要修剪了 估计是梯度阈值的问题 现在开始对比梯度阈值
