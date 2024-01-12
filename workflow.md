@@ -193,4 +193,6 @@ in-place 操作可能会覆盖计算梯度所需的值。
 似乎无法正确用键值对正确获取参数状态 因为jittor和pytorch的Adam优化器的形式不同 根据jittor优化器组织格式 采用索引来找值 我特么有点哈比了 可以不调用stact_dict方法 直接self.optimizer.default就可以得到属性 然后再用assign修改参数状态 但是很奇怪的是他好像没有更新优化器里的状态只有assign之后的值好像是对的 但是assign应该是不返回值的 很奇怪 但是Gaussian里面的也没有更新优化器 先往后面再走 看看会不会报错 
 
 
-default 得出的属性无法用assign更新 感觉还是要尝试调用stact_dict方法
+default 得出的属性无法用assign更新 感觉还是要尝试调用stact_dict方法,stact_dict方法就是范围default属性 没什么区别
+
+default是只读函数 无法更新 对应的state_dict函数也是调用的只读函数default，最后选取的是优化器的param_group属性，并用assign修改数据,好像这种做法有些问题 因为 最后assign一次后 原来获取的values都是梯度 assign一次后直接变成张量了，明天再改

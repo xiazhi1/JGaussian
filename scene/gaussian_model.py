@@ -267,30 +267,37 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups[:-1]: # 为了排除screenspacepoints，这里使用了[:-1]
+        for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
             if group["name"] == name:
-                stored_state = self.optimizer.state_dict().get(id(group['params'][0]), None)
-                stored_state["exp_avg"] = jt.zeros_like(tensor)
-                stored_state["exp_avg_sq"] = jt.zeros_like(tensor)
+                stored_state = self.optimizer.param_groups[i] # 用id作为索引
 
-                del self.optimizer.state[group['params'][0]]
+                stored_state["values"] = jt.zeros_like(tensor)
+                stored_state["m"] = jt.zeros_like(tensor)
+                stored_state["grads"] = jt.zeros_like(tensor)
+
                 group["params"][0] = tensor
-                self.optimizer.state[group['params'][0]] = stored_state
+
+                self.optimizer.param_groups[i]['values'][0].assign([stored_state["values"]])
+                self.optimizer.param_groups[i]['m'][0].assign([stored_state["m"]])
+                self.optimizer.param_groups[i]['grads'][0].assign([stored_state["grads"]])
 
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups[:-1]: # 为了排除screenspacepoints，这里使用了[:-1]
-            stored_state = self.optimizer.state_dict().get(id(group['params'][0]), None)
+        for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
+            stored_state = self.optimizer.param_groups[i] # 用id作为索引
             if stored_state is not None:
-                stored_state["exp_avg"] = stored_state["exp_avg"][mask]
-                stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
+                stored_state["values"] = stored_state["values"][mask]
+                stored_state["m"] = stored_state["m"][mask]
+                stored_state["grads"] = stored_state["gards"][mask]
 
-                del self.optimizer.state[group['params'][0]]
                 group["params"][0] = (group["params"][0][mask])
-                self.optimizer.state[group['params'][0]] = stored_state
+                
+                self.optimizer.param_groups[i]['values'][0].assign([stored_state["values"]])
+                self.optimizer.param_groups[i]['m'][0].assign([stored_state["m"]])
+                self.optimizer.param_groups[i]['grads'][0].assign([stored_state["grads"]])
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
@@ -319,21 +326,19 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
-            stored_state = self.optimizer.defaults['param_groups'][i] # 用id作为索引
+            stored_state = self.optimizer.param_groups[i] # 用id作为索引
             if stored_state is not None:
 
                 stored_state["values"] = jt.concat((stored_state["values"][0], jt.zeros_like(extension_tensor)), dim=0)
-                stored_state["m"] = jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0)
+                stored_state["m"] = jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0) # split 的时候concat张量反而变小了
                 stored_state["grads"] = jt.concat((stored_state["grads"][0], jt.zeros_like(extension_tensor)), dim=0)
  
                 group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
-                del self.optimizer.defaults['param_groups'][i]['values'], self.optimizer.defaults['param_groups'][i]['m'], self.optimizer.defaults['param_groups'][i]['grads']
-            
-                self.optimizer.defaults['param_groups'][i]['values'][0] = stored_state["values"]
-                self.optimizer.defaults['param_groups'][i]['m'][0] = stored_state["m"]
-                self.optimizer.defaults['param_groups'][i]['grads'][0] = stored_state["grads"]
-                print(stored_state["values"])
-                print(self.optimizer.defaults['param_groups'][i]['values'][0])
+                
+
+                self.optimizer.param_groups[i]['values'][0].assign(stored_state["values"])
+                self.optimizer.param_groups[i]['m'][0].assign(stored_state["m"])
+                self.optimizer.param_groups[i]['grads'][0].assign(stored_state["grads"]) # 这个地方有问题 assign之后导致values m, grads 都不再是list了
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
