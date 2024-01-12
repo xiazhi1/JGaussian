@@ -180,6 +180,17 @@ in-place 操作可能会覆盖计算梯度所需的值。
 
 找到问题 问题出在把优化器更新步骤放在了with jt.no_grad里面 jittor的no_grad会把优化器参数也变成0 而且不能再改回去
 
+### densification
+
 现在开始做densification
 
-现在有个问题，就是Gaussian_splatting的densification其实在第3次迭代就由200多个点需要修剪 而Gaussian_torch和JGaussian都在第三次迭代中没有点要修剪 非常奇怪 可能是梯度阈值设置的问题 另外 GaussinSplatting第一次迭代就有150多个点需要修剪了 估计是梯度阈值的问题 现在开始对比梯度阈值
+现在有个问题，就是Gaussian_splatting的densification其实在第3次迭代就由200多个点需要修剪 而Gaussian_torch和JGaussian都在第三次迭代中没有点要修剪 非常奇怪 可能是梯度阈值设置的问题 另外 GaussinSplatting第一次迭代就有150多个点需要修剪了 估计是梯度阈值的问题 现在开始对比梯度阈值 Gaussian——torch计算的梯度比Gaussian-splatting大约小2到4个量级，原来的梯度阈值为0.0002 现在先把他改为0.0000002 小三个量级 果然 修改后 Gaussian——torch由500多个点要修剪 而JGaussian有2000多个点要修剪 先用着 后续可能需要调参
+
+在裁剪优化器参数时发现exp和exp_sq参数都不存在 后来发现是因为只有在运行过一次step后才会有exp和exp_sq
+
+经过查阅资料和思考 Jittor中的Adam优化器参数与Pytorch有所不同 其内部状态参量是values m grads 这些需要仿照pytorch里面添加exp_avg和exp_avg_sq的方法添加并修改
+
+似乎无法正确用键值对正确获取参数状态 因为jittor和pytorch的Adam优化器的形式不同 根据jittor优化器组织格式 采用索引来找值 我特么有点哈比了 可以不调用stact_dict方法 直接self.optimizer.default就可以得到属性 然后再用assign修改参数状态 但是很奇怪的是他好像没有更新优化器里的状态只有assign之后的值好像是对的 但是assign应该是不返回值的 很奇怪 但是Gaussian里面的也没有更新优化器 先往后面再走 看看会不会报错 
+
+
+default 得出的属性无法用assign更新 感觉还是要尝试调用stact_dict方法

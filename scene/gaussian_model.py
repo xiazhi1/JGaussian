@@ -218,7 +218,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         PlyData([el]).write(path)
 
     def reset_opacity(self):
-        opacities_new = inverse_sigmoid(jt.min(self.get_opacity, jt.ones_like(self.get_opacity)*0.01))
+        opacities_new = inverse_sigmoid(jt.minimum(self.get_opacity, jt.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
@@ -267,14 +267,14 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups:
+        for group in self.optimizer.param_groups[:-1]: # 为了排除screenspacepoints，这里使用了[:-1]
             if group["name"] == name:
-                stored_state = self.optimizer.state.get(group['params'][0], None)
+                stored_state = self.optimizer.state_dict().get(id(group['params'][0]), None)
                 stored_state["exp_avg"] = jt.zeros_like(tensor)
                 stored_state["exp_avg_sq"] = jt.zeros_like(tensor)
 
                 del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
+                group["params"][0] = tensor
                 self.optimizer.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
@@ -282,24 +282,24 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups:
-            stored_state = self.optimizer.state.get(group['params'][0], None)
+        for group in self.optimizer.param_groups[:-1]: # 为了排除screenspacepoints，这里使用了[:-1]
+            stored_state = self.optimizer.state_dict().get(id(group['params'][0]), None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
                 stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
 
                 del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter((group["params"][0][mask]))
+                group["params"][0] = (group["params"][0][mask])
                 self.optimizer.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
-                group["params"][0] = nn.Parameter(group["params"][0][mask])
+                group["params"][0] = group["params"][0][mask]
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
     def prune_points(self, mask): # 该方法用于修剪掉不需要的点
-        valid_points_mask = ~mask # 生成修剪掩码
+        valid_points_mask = jt.logical_not(mask) # 生成修剪掩码
         optimizable_tensors = self._prune_optimizer(valid_points_mask) # 从优化器参数中删除不需要的点
 
         self._xyz = optimizable_tensors["xyz"]
@@ -314,20 +314,26 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask] # 将梯度累积和梯度累积次数，以及最大2D半径中不需要的点删除
 
-    def cat_tensors_to_optimizer(self, tensors_dict):
+    def cat_tensors_to_optimizer(self, tensors_dict): # 有些奇怪的是 stored_state一直是None 不过Gaussian-splatting里也没用到
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups[:-1]: # 为了排除screenspacepoints，这里使用了[:-1]
+        for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
-            stored_state = self.optimizer.state_dict().get(id(group['params'][0]), None)
+            stored_state = self.optimizer.defaults['param_groups'][i] # 用id作为索引
             if stored_state is not None:
 
-                stored_state["exp_avg"] = jt.concat((stored_state["exp_avg"], jt.zeros_like(extension_tensor)), dim=0)
-                stored_state["exp_avg_sq"] = jt.concat((stored_state["exp_avg_sq"], jt.zeros_like(extension_tensor)), dim=0)
-
-                del self.optimizer.state[group['params'][0]]
+                stored_state["values"] = jt.concat((stored_state["values"][0], jt.zeros_like(extension_tensor)), dim=0)
+                stored_state["m"] = jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0)
+                stored_state["grads"] = jt.concat((stored_state["grads"][0], jt.zeros_like(extension_tensor)), dim=0)
+ 
                 group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
-                self.optimizer.state[group['params'][0]] = stored_state
+                del self.optimizer.defaults['param_groups'][i]['values'], self.optimizer.defaults['param_groups'][i]['m'], self.optimizer.defaults['param_groups'][i]['grads']
+            
+                self.optimizer.defaults['param_groups'][i]['values'][0] = stored_state["values"]
+                self.optimizer.defaults['param_groups'][i]['m'][0] = stored_state["m"]
+                self.optimizer.defaults['param_groups'][i]['grads'][0] = stored_state["grads"]
+                print(stored_state["values"])
+                print(self.optimizer.defaults['param_groups'][i]['values'][0])
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
@@ -359,11 +365,11 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
-        padded_grad = jt.zeros((n_init_points)).cuda()
+        padded_grad = jt.zeros((n_init_points))
         padded_grad[:grads.shape[0]] = grads.squeeze()
         selected_pts_mask = jt.where(padded_grad >= grad_threshold, True, False)
         selected_pts_mask = jt.logical_and(selected_pts_mask,
-                                              jt.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent) # 生成掩码
+                                              jt.max(self.get_scaling, dim=1).data > self.percent_dense*scene_extent) # 生成掩码
 
         stds = self.get_scaling[selected_pts_mask].repeat(N,1)
         means =jt.zeros((stds.size(0), 3))
@@ -377,7 +383,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1) # 利用掩码提取所有满足条件的点，并进行N次切割得到新的位置、缩放和旋转信息
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
 
-        prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum(), dtype=bool)))
+        prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum().item(), dtype=bool)))
         self.prune_points(prune_filter) # 生成修建掩码后修剪掩码中的点
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent): # 该方法用于对梯度张量中的点直接复制满足条件的点进行密集化
@@ -405,9 +411,13 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         prune_mask = (self.get_opacity < min_opacity).squeeze() # 修剪掩码，用于标记不透明度小于阈值的点
         if max_screen_size: # 如果场景最大尺寸不为空，则将大点的掩码和缩放因子大于场景范围的点添加到修剪掩码中
             big_points_vs = self.max_radii2D > max_screen_size 
-            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+            big_points_ws = self.get_scaling.max(dim=1).data > 0.1 * extent
             prune_mask = jt.logical_or(jt.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask) # 修剪掩码中的点
+
+        # jt.clean_graph()
+        # jt.sync_all()
+        # jt.gc() # 清理图，同步所有设备，进行垃圾回收
 
     def add_densification_stats(self,viewspace_point_tensor_grad,update_filter):
         self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor_grad[update_filter,:2], dim=-1, keepdim=True)
