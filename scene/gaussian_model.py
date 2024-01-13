@@ -171,10 +171,10 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             {'params': [self.screenspace_points], 'lr': 0.0, "name": "screenspace_points"}
         ] # 创建一个列表，用于存储所有可优化的参数，以及它们的学习率和名称
         self.optimizer = jt.optim.Adam(l, lr=0.0, eps=1e-15) # 创建一个Adam优化器，用于优化上面的参数列表
-        # self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
-        #                                             lr_final=training_args.position_lr_final*self.spatial_lr_scale,
-        #                                             lr_delay_mult=training_args.position_lr_delay_mult,
-        #                                             max_steps=training_args.position_lr_max_steps) # 创建一个学习率调度器，用于调整点云坐标的学习率
+        self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
+                                                    lr_final=training_args.position_lr_final*self.spatial_lr_scale,
+                                                    lr_delay_mult=training_args.position_lr_delay_mult,
+                                                    max_steps=training_args.position_lr_max_steps) # 创建一个学习率调度器，用于调整点云坐标的学习率
 
     def update_learning_rate(self, iteration): # 该方法用于更新优化器中的学习率
         ''' Learning rate scheduling per step '''
@@ -407,9 +407,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             prune_mask = jt.logical_or(jt.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask) # 修剪掩码中的点
 
-        # jt.clean_graph()
-        # jt.sync_all()
-        # jt.gc() # 清理图，同步所有设备，进行垃圾回收
+        jt.clean_graph()
+        jt.sync_all()
+        jt.gc() # 清理图，同步所有设备，进行垃圾回收
 
     def add_densification_stats(self,viewspace_point_tensor_grad,update_filter):
         self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor_grad[update_filter,:2], dim=-1, keepdim=True)

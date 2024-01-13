@@ -209,4 +209,7 @@ default是只读函数 无法更新 对应的state_dict函数也是调用的只�
 
 ### 模型的保存与加载
 
+感觉没必要用tensorboard 之后再加吧 先完成简单的再完善 正确Gaussianspltting里面我训练的时候也没用tensorboard 然后那个networkgui 到时候换个可视化工具 原版的太麻烦了 不好部署
+
+不太行 tensorboard导入失败 唉 算了 先不用tensorboard
 
