@@ -153,7 +153,7 @@ class GaussianRenderer():
     """
 
     def __init__(self, active_sh_degree=3, white_bkgd=True):
-        self.active_sh_degree = active_sh_degree
+        self.active_sh_degree = active_sh_degree 
         self.debug = False
         self.white_bkgd = white_bkgd
         # y, x = jt.meshgrid(jt.arange(256), jt.arange(256))

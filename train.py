@@ -35,13 +35,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     if checkpoint:
         (model_params, first_iter) = jt.load(checkpoint)
         gaussians.restore(model_params, opt)
-
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    if not dataset.white_background:
-        gaussian_renderer = GaussianRenderer(white_bkgd=False)
-    gaussian_renderer = GaussianRenderer()
-    background = jt.array(bg_color, dtype=jt.float32) # 背景颜色
-
+    
     viewpoint_stack = None # 用于存储视角信息
     ema_loss_for_log = 0.0 # 用于计算每个iteration的loss
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress") # 用于显示进度条
@@ -62,6 +56,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
+        gaussian_renderer = GaussianRenderer(active_sh_degree=gaussians.active_sh_degree,white_bkgd=dataset.white_background) # 创建gaussian_renderer对象
         render_pkg = gaussian_renderer.forward(viewpoint_cam,gaussians) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
         image,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 获取渲染结果
 
@@ -135,7 +130,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             gaussians.optimizer.zero_grad() # 梯度清零
 
 
-        print("time of one iter:",iter_end-iter_start) # 打印每个iteration的时间
+        # print("time of one iter:",iter_end-iter_start) # 打印每个iteration的时间
         # # jt.clean_graph()
         # # jt.sync_all()
         # # jt.gc()

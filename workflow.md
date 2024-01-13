@@ -213,3 +213,26 @@ default是只读函数 无法更新 对应的state_dict函数也是调用的只�
 
 不太行 tensorboard导入失败 唉 算了 先不用tensorboard
 
+### 模型的训练
+
+非常吃惊的就是在TiTanxp上 以360v2 bycicle数据集 且resolution/8 的基础上 训练7000次迭代需要6个小时,大概训练500个迭代开始报错 不清楚是卡的问题还是type的问题 调小densification的参数试一下 看能不能及时报错 报错里面反复出现[54275,2] 是原本screenspacepoints的shape 估计是他出了问题 而且在前面的迭代都没有问题 那就说明应该是densification的问题
+
+等这么久太浪费时间了 决定先训练一个迭代次数小点的 拿来修改render.py
+
+另外同时训练Gaussian torch 看看其耗时与结果 7000次iter 九个小时 推测是计算knn的时候放在cpu上计算导出速度变慢了一些 到时候做个消融实验 一个是纯pytorch 一个是只修改渲染函数 一个是只修改distCUDA2
+
+训练一个小的 JGaussion test,save 的iter是 50,100  100个迭代的训练时间为8分钟
+
+Gaussian_render的定义不严谨 球谐函数默认是3 应该修改为可传入参数 用于对应Gaussian里面的升球谐函数
+
+
+第一次缩小到100个iter的对应参数
+CUDA_VISIBLE_DEVICES=1 python train.py -s /home/ipad_gan/zlb/gaussian-splatting/data/360_v2/bicycle -r 8 --iterations 100 --save_iterations 50 100 --test_iterations 50 100 --densify_from_iter 50 --densification_interval 10 --opacity_reset_interval 50 --densify_grad_threshold 0.0000002 --eval
+
+如果没问题的话就准备开始改render 然后慢慢调参了
+
+没有问题 那就是显卡显存的问题  那就是训练过程包括致密化都是可以的 
+
+mipnerf 360数据集 还需要加 --eval 用于切分训练相机和测试相机
+
+这个lplps 指标太麻烦了 设计到很多模块，先调参吧 根据这个有点没必要,这里需要一个test数据集做metric 所以需要重新训练一下

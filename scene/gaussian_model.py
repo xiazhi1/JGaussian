@@ -256,12 +256,12 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        self._xyz = nn.Parameter(jt.array(xyz, dtype=jt.float))
-        self._features_dc = nn.Parameter(jt.array(features_dc, jt=jt.float).transpose(1, 2).contiguous())
-        self._features_rest = nn.Parameter(jt.array(features_extra, dtype=jt.float).transpose(1, 2).contiguous())
-        self._opacity = nn.Parameter(jt.array(opacities, dtype=jt.float))
-        self._scaling = nn.Parameter(jt.array(scales, dtype=jt.float))
-        self._rotation = nn.Parameter(jt.array(rots, dtype=jt.float))
+        self._xyz = jt.array(xyz, dtype=jt.float32)
+        self._features_dc = jt.array(features_dc, dtype=jt.float32).transpose(1, 2).contiguous()
+        self._features_rest = jt.array(features_extra, dtype=jt.float32).transpose(1, 2).contiguous()
+        self._opacity = jt.array(opacities, dtype=jt.float32)
+        self._scaling = jt.array(scales, dtype=jt.float32)
+        self._rotation = jt.array(rots, dtype=jt.float32)
 
         self.active_sh_degree = self.max_sh_degree
 

@@ -1,4 +1,4 @@
-import jittor as jt
+import torch
 
 from .modules.lpips import LPIPS
 

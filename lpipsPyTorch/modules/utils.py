@@ -4,7 +4,7 @@ import jittor as jt
 
 
 def normalize_activation(x, eps=1e-10):
-    norm_factor = torch.sqrt(torch.sum(x ** 2, dim=1, keepdim=True))
+    norm_factor = jt.sqrt(jt.sum(x ** 2, dim=1, keepdims=True))
     return x / (norm_factor + eps)
 
 

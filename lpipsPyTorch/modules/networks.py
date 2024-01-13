@@ -3,7 +3,7 @@ from typing import Sequence
 from itertools import chain
 
 import jittor as jt
-import jittor as jt.nn as nn
+from jittor import nn as nn
 from torchvision import models
 
 from .utils import normalize_activation
