@@ -220,11 +220,7 @@ class GaussianRenderer():
 
         # jt.display_memory_info()
         image = jt.transpose(self.render_color,(2,0,1))
-        # # test to find grad error
-        # loss = self.render_color.sum()
-        # pc.optimizer.backward(loss)
-        # for p in pc.parameters():
-        #     grad = p.opt_grad(pc.optimizer)   
+   
         return {
             "render": image,
             "viewspace_points": means2D,

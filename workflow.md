@@ -195,4 +195,12 @@ in-place 操作可能会覆盖计算梯度所需的值。
 
 default 得出的属性无法用assign更新 感觉还是要尝试调用stact_dict方法,stact_dict方法就是范围default属性 没什么区别
 
-default是只读函数 无法更新 对应的state_dict函数也是调用的只读函数default，最后选取的是优化器的param_group属性，并用assign修改数据,好像这种做法有些问题 因为 最后assign一次后 原来获取的values都是梯度 assign一次后直接变成张量了，明天再改
+default是只读函数 无法更新 对应的state_dict函数也是调用的只读函数default，最后选取的是优化器的param_group属性，并用assign修改数据,好像这种做法有些问题 因为 最后assign一次后 原来获取的values都是list assign一次后直接变成张量了，明天再改
+
+这个地方有问题 assign之后导致values m, grads 都不再是list了 应该是stored_state与原优化器参数共享内存了 直接在前面已经修改好了 不用assign了
+
+多次step报错 因为screenspcepoints的params形状发生了变化，所以决定还是在修改优化器参数时添加screenspacepoints 因为不加的话 在迭代求梯度时 用到的assign会把screenspacepoints的type更新为xyz的type[:, :2]
+
+发现一个问题 screenspacepoint的梯度只更新了一次后就不动了,但是其他的优化器参数梯度都一直在更新,而且有个问题就是screenspacepoint的点的shape并没有变化？
+
+修改后可以变化了 但是梯度还是没动 还是没有什么变化？ 嗯？ 好像所有梯度都没什么变化？

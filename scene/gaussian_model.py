@@ -267,38 +267,28 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
-        for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
+        for i,group in enumerate(self.optimizer.param_groups): 
             if group["name"] == name:
                 stored_state = self.optimizer.param_groups[i] # 用id作为索引
 
-                stored_state["values"] = jt.zeros_like(tensor)
-                stored_state["m"] = jt.zeros_like(tensor)
-                stored_state["grads"] = jt.zeros_like(tensor)
+                stored_state["values"] = [jt.zeros_like(tensor)]
+                stored_state["m"] = [jt.zeros_like(tensor)]
+                stored_state["grads"] = [jt.zeros_like(tensor)]
 
                 group["params"][0] = tensor
-
-                self.optimizer.param_groups[i]['values'][0].assign([stored_state["values"]])
-                self.optimizer.param_groups[i]['m'][0].assign([stored_state["m"]])
-                self.optimizer.param_groups[i]['grads'][0].assign([stored_state["grads"]])
-
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
-        for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
+        for i,group in enumerate(self.optimizer.param_groups): 
             stored_state = self.optimizer.param_groups[i] # 用id作为索引
             if stored_state is not None:
-                stored_state["values"] = stored_state["values"][mask]
-                stored_state["m"] = stored_state["m"][mask]
-                stored_state["grads"] = stored_state["gards"][mask]
+                stored_state["values"] = [stored_state["values"][0][mask]]
+                stored_state["m"] = [stored_state["m"][0][mask]]
+                stored_state["grads"] = [stored_state["grads"][0][mask]]
 
                 group["params"][0] = (group["params"][0][mask])
-                
-                self.optimizer.param_groups[i]['values'][0].assign([stored_state["values"]])
-                self.optimizer.param_groups[i]['m'][0].assign([stored_state["m"]])
-                self.optimizer.param_groups[i]['grads'][0].assign([stored_state["grads"]])
-
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
                 group["params"][0] = group["params"][0][mask]
@@ -314,7 +304,8 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
-        self._rotation = optimizable_tensors["rotation"] # 将返回的优化器参数添加到高斯模型中
+        self._rotation = optimizable_tensors["rotation"] 
+        self.screenspace_points = optimizable_tensors["screenspace_points"]# 将返回的优化器参数添加到高斯模型中
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
 
@@ -323,23 +314,17 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def cat_tensors_to_optimizer(self, tensors_dict): # 有些奇怪的是 stored_state一直是None 不过Gaussian-splatting里也没用到
         optimizable_tensors = {}
-        for i,group in enumerate(self.optimizer.param_groups[:-1]): # 为了排除screenspacepoints，这里使用了[:-1]
+        for i,group in enumerate(self.optimizer.param_groups): 
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.param_groups[i] # 用id作为索引
             if stored_state is not None:
 
-                stored_state["values"] = jt.concat((stored_state["values"][0], jt.zeros_like(extension_tensor)), dim=0)
-                stored_state["m"] = jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0) # split 的时候concat张量反而变小了
-                stored_state["grads"] = jt.concat((stored_state["grads"][0], jt.zeros_like(extension_tensor)), dim=0)
+                stored_state["values"] = [jt.concat((stored_state["values"][0], jt.zeros_like(extension_tensor)), dim=0)]
+                stored_state["m"] = [jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0)] # split 的时候concat张量反而变小了
+                stored_state["grads"] = [jt.concat((stored_state["grads"][0], jt.zeros_like(extension_tensor)), dim=0)] # 共享内存了 所以直接赋值list即可
  
                 group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
-                
-
-                self.optimizer.param_groups[i]['values'][0].assign(stored_state["values"])
-                self.optimizer.param_groups[i]['m'][0].assign(stored_state["m"])
-                self.optimizer.param_groups[i]['grads'][0].assign(stored_state["grads"]) # 这个地方有问题 assign之后导致values m, grads 都不再是list了
-
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
                 group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
@@ -352,8 +337,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,
         "opacity": new_opacities,
-        "scaling" : new_scaling,
-        "rotation" : new_rotation}
+        "scaling" : new_scaling, 
+        "rotation" : new_rotation, # 将新的点云信息添加到字典中
+        "screenspace_points" : new_xyz[:, :2]}  # 这一栏只是为了后续优化器参数与type匹配 实际上无实际作用 因为学习率是0 不会优化
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d) # 将新的点云信息添加到优化器参数中
         self._xyz = optimizable_tensors["xyz"]
@@ -361,7 +347,8 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
-        self._rotation = optimizable_tensors["rotation"] # 将新的优化器信息添加到高斯模型中
+        self._rotation = optimizable_tensors["rotation"] 
+        self.screenspace_points = optimizable_tensors["screenspace_points"]# 将新的优化器信息添加到高斯模型中
 
         self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
         self.denom = jt.zeros((self.get_xyz.shape[0], 1))
@@ -403,7 +390,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask] #利用掩码从原始张量中提取满足条件的点
-
+    
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation) #将提取的点添加到原始张量中
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size): # 该方法用于对高斯模型进行密集化和修剪。
@@ -411,7 +398,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         grads[grads.isnan()] = 0.0 # 计算梯度并将梯度张量中的NaN值替换为0
 
         self.densify_and_clone(grads, max_grad, extent) # 对梯度张量中的点直接复制满足条件的点进行密集化
-        self.densify_and_split(grads, max_grad, extent) # 对梯度张量中的点在满足条件的点的位置生成新的点进行密集化
+        self.densify_and_split(grads, max_grad, extent) # 对梯度张量中的点在满足条件的点的位置生成新的点进行密集化并进行修剪
 
         prune_mask = (self.get_opacity < min_opacity).squeeze() # 修剪掩码，用于标记不透明度小于阈值的点
         if max_screen_size: # 如果场景最大尺寸不为空，则将大点的掩码和缩放因子大于场景范围的点添加到修剪掩码中

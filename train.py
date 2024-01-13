@@ -91,12 +91,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # 最后得出的结论是因为jittor没有C++ API 无法与cuda交互进行渲染，导致项目无法进行下去，因为无梯度的tensor无法进行反向传播
 
         gaussians.screenspace_points.assign(viewspace_point_tensor) # 更新视空间坐标
-        # gaussians.optimizer.zero_grad() # 梯度清零
-
-        # # # test code to verify where grad is lost
-        # loss = image.sum()
-        # gaussians.optimizer.backward(image) # 反向传播 发现此处梯度也是很多0.....
-
+       
         # Loss
         gt_image = viewpoint_cam.original_image.astype(jt.float32) # 获取原始图像
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
@@ -161,7 +156,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # jt.clean_graph()
         # jt.sync_all()
         # jt.gc()
-        # jt.display_memory_info()
+        jt.display_memory_info()
         
 
 def prepare_output_and_logger(args):    
