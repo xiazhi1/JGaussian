@@ -236,3 +236,36 @@ CUDA_VISIBLE_DEVICES=1 python train.py -s /home/ipad_gan/zlb/gaussian-splatting/
 mipnerf 360数据集 还需要加 --eval 用于切分训练相机和测试相机
 
 这个lplps 指标太麻烦了 设计到很多模块，先调参吧 根据这个有点没必要,这里需要一个test数据集做metric 所以需要重新训练一下
+
+第二次扩大到500个iter，对应的参数如下 基本都扩大了50倍 包括梯度门限
+
+CUDA_VISIBLE_DEVICES=1 python train.py -s /home/ipad_gan/zlb/gaussian-splatting/data/360_v2/bicycle -r 8 --iterations 500 --save_iterations 250 500 --test_iterations 250 500 --densify_from_iter 250 --densification_interval 50 --opacity_reset_interval 250 --densify_grad_threshold 0.00001 --eval
+
+
+### CUDA占用参数空间过多
+
+在第250个iter报错 我认为是开始记录的时候报错 参数太多了 也就是问题出在training_report函数部分
+
+命令行报错
+uses too much parameter space (0x32b4 bytes, 0x1100 max).
+ptxas fatal   : Ptx assembly aborted due to errors
+Traceback (most recent call last):
+  File "train.py", line 222, in <module>
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.st
+art_checkpoint, args.debug_from)
+  File "train.py", line 103, in training
+    training_report(iteration, l1_loss, testing_iterations, scene, gaussian_renderer.forward)
+  File "train.py", line 163, in training_report
+    jt.sync_all()
+
+chatGPT回答
+这个错误表明，你的CUDA代码在编译时使用了过多的参数空间，超过了最大限制（0x1100字节）。这可能是因为你的函数使用了太多的局部变量或参数。
+
+你可以尝试以下方法来解决这个问题：
+
+减少函数的参数数量。
+减少函数中的局部变量。
+尝试将一些变量移动到全局范围，或者将它们存储在设备内存中，而不是作为函数参数传递。
+此外，你的代码在执行jt.sync_all()时失败了，这可能是由于之前的CUDA错误导致的。你需要首先解决CUDA编译错误，然后再尝试运行jt.sync_all()
+
+我懂了 是因为我每次在做densification的迭代的时候同时进行写入，然后还是在densification之前进行的写入参数，然后这会导致densification还没来的及清理内存 我就又开始写 所以导致内存爆炸 调换一下位置后再尝试 然后把记录点不要和densification的迭代放在一起

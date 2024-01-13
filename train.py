@@ -86,9 +86,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         viewspace_point_tensor_grad = jt.array(viewspace_point_tensor_grad, dtype=viewspace_point_tensor.dtype) # 转换为tensor
 
         iter_end=time.time() # 用于计算每个iteration的时间
+        # Densification
+        if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
+            # Keep track of max radii in image-space for pruning
+            gaussians.max_radii2D[visibility_filter] = jt.maximum(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
+            gaussians.add_densification_stats(viewspace_point_tensor_grad,visibility_filter) # 更新视空间坐标和可见性
 
-        
-    
+            if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0: # 如果当前迭代大于指定的开始密集化的迭代数，并且当前迭代是密集化间隔的倍数，那么就进行密集化和修剪操作
+                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+            
+            if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter): # 如果当前迭代是透明度重置间隔的倍数，或者是白色背景并且当前迭代等于指定的开始密集化的迭代数，那么就重置透明度
+                gaussians.reset_opacity()
+
+        # Optimizer step
+        if iteration < opt.iterations:
+            gaussians.optimizer.step()
+            gaussians.optimizer.zero_grad() # 梯度清零
 
         with jt.no_grad(): 
             # Progress bar
@@ -109,25 +123,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-
-        # Densification
-        if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
-            # Keep track of max radii in image-space for pruning
-            gaussians.max_radii2D[visibility_filter] = jt.maximum(gaussians.max_radii2D[visibility_filter], radii[visibility_filter]) # 更新最大半径
-            gaussians.add_densification_stats(viewspace_point_tensor_grad,visibility_filter) # 更新视空间坐标和可见性
-
-            if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0: # 如果当前迭代大于指定的开始密集化的迭代数，并且当前迭代是密集化间隔的倍数，那么就进行密集化和修剪操作
-                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
-            
-            if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter): # 如果当前迭代是透明度重置间隔的倍数，或者是白色背景并且当前迭代等于指定的开始密集化的迭代数，那么就重置透明度
-                gaussians.reset_opacity()
-    
-
-        # Optimizer step
-        if iteration < opt.iterations:
-            gaussians.optimizer.step()
-            gaussians.optimizer.zero_grad() # 梯度清零
 
 
         # print("time of one iter:",iter_end-iter_start) # 打印每个iteration的时间

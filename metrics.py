@@ -28,8 +28,8 @@ def readImages(renders_dir, gt_dir):
     for fname in os.listdir(renders_dir):
         render = Image.open(renders_dir / fname)
         gt = Image.open(gt_dir / fname)
-        renders.append(tf.to_tensor(render).unsqueeze(0)[:, :3, :, :])
-        gts.append(tf.to_tensor(gt).unsqueeze(0)[:, :3, :, :])
+        renders.append(jt.array(tf.to_tensor(render)).unsqueeze(0)[:, :3, :, :])
+        gts.append(jt.array(tf.to_tensor(gt)).unsqueeze(0)[:, :3, :, :])
         image_names.append(fname)
     return renders, gts, image_names
 
@@ -69,7 +69,7 @@ def evaluate(model_paths): # 评估模型
                 # lpipss = []
 
                 for idx in tqdm(range(len(renders)), desc="Metric evaluation progress"):
-                    ssims.append(ssim(renders[idx], gts[idx]))
+                    ssims.append(ssim(renders[idx].squeeze(0), gts[idx].squeeze(0)))
                     psnrs.append(psnr(renders[idx], gts[idx]))
                     # lpipss.append(lpips(renders[idx], gts[idx], net_type='vgg'))
 
