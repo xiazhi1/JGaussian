@@ -1,7 +1,0 @@
-# ninja log v5
-1	11334	1702466183253379554	/home/ipad_gan/zlb/JGaussian/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/simple_knn.o	f07f9759fe4857a9
-0	22970	1702466194860179244	/home/ipad_gan/zlb/JGaussian/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/ext.o	6eb5008d39f12d2
-1	54554	1702466226468907762	/home/ipad_gan/zlb/JGaussian/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/spatial.o	c6f47999cbc97f2e
-16	15698	1702887748741733031	/home/ipad_gan/zlb/JGaussian/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/simple_knn.o	e8e14b04b29897ab
-16	30245	1702887763277800261	/home/ipad_gan/zlb/JGaussian/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/ext.o	250f6b120da5fd0d
-17	61567	1702887794609943581	/home/ipad_gan/zlb/JGaussian/submodules/simple-knn/build/temp.linux-x86_64-cpython-38/spatial.o	b12dc304048a565

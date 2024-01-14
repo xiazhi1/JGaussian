@@ -63,13 +63,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gaussian_renderer = GaussianRenderer(active_sh_degree=gaussians.active_sh_degree,white_bkgd=dataset.white_background) # 创建gaussian_renderer对象
         render_pkg = gaussian_renderer.forward(viewpoint_cam,gaussians) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
         image,viewspace_point_tensor, visibility_filter, radii = render_pkg["render"],render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"] # 获取渲染结果
-
-
-        # render_pkg = render(viewpoint_cam, gaussians, pipe, background) # 调用gaussian_renderer中的render函数进行光栅化渲染，返回的是tensor字典，需要转换为jittor，在下面操作时转换
-        # image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-        # 如果想把image转为jt.var必须先转为numpy，但是带梯度的tensor转为numpy会被丢弃梯度，进而导致无法反向传播
-        # 最后得出的结论是因为jittor没有C++ API 无法与cuda交互进行渲染，导致项目无法进行下去，因为无梯度的tensor无法进行反向传播
-
         gaussians.screenspace_points.assign(viewspace_point_tensor) # 更新视空间坐标
        
         # Loss
@@ -77,15 +70,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1 = l1_loss(image, gt_image) # 计算loss L1
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
         gaussians.optimizer.backward(loss) # 反向传播
-
         grad = gaussians.screenspace_points.opt_grad(gaussians.optimizer) # 获取梯度
-         
-        # test to get the non zero grad
-        # non_zero_row_indices = jt.any(grad != 0, dim=1)
-        # non_zero_rows = grad[non_zero_row_indices]
-        # print(non_zero_rows)
-
-
         viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1) # 由于视空间坐标是三维的，而梯度是二维的，所以需要在梯度后面加一个0
         viewspace_point_tensor_grad = jt.array(viewspace_point_tensor_grad, dtype=viewspace_point_tensor.dtype) # 转换为tensor
 
@@ -192,7 +177,7 @@ if __name__ == "__main__":
     
 
     jt.flags.use_cuda = 1
-    # jt.flags.lazy_execution=0
+    jt.flags.lazy_execution=0
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)
@@ -221,8 +206,6 @@ if __name__ == "__main__":
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    # Start GUI server, configure and run training
-    # network_gui.init(args.ip, args.port)
     # torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
 

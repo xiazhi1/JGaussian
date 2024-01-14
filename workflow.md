@@ -319,9 +319,13 @@ int32__o_0__opkey1_array__T_float32__opkey2_array__T_float32__opkey3_arr___hash_
 
 ### Gaussian-torch
 
- 7000次iter 参数默认  [ITER 7000] Evaluating train: L1 0.10286580845713617 PSNR 17.087402534484863 [14/01 03:30:37]
+ 7000次iter 参数默认 全部替换CUDA部分 训练时长9个半小时
 
-[ITER 7000] Saving Gaussians [14/01 03:30:37]
+ 离谱 有点高爆光了 不知道是过拟合的原因还是背景的问题
+
+
+
+
 
 
 ### JGaussian
@@ -368,11 +372,21 @@ PSNR :   15.6818419
 SSIM :    0.4699438
 PSNR :   19.7148170
 
-参数：python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 7000 --save_iterations 3000 7000 --test_iterations 3000 7000 --eval
+参数：python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 7000 --save_iterations 3000 7000 --test_iterations 3000 7000 --eval --checkpoint_iterations 1000 2000 3000 4000 5000 6000 7000 
 
+此处好像会炸显存 感觉可能确实是显存问题了 尝试下把保存的和测试的迭代调小为500 方便及时清理显存 再不行把保存checkpoints关掉试试
+真就可以了 做的改变 无非是保存和测试的迭代调小为500 然后关掉了延迟执行用于定位错误位置
+
+参数：CUDA_VISIBLE_DEVICES=1 python train.py -s /home/ipad_gan/zlb/gaussian-splatting/data/360_v2/bicycle -r 8 --iterations 1500 --save_iterations 500 1000 1500 --test_iterations 500 1000 1500 --eval --checkpoint_iterations 500 1000 1500
+
+参数：CUDA_VISIBLE_DEVICES=1 python train.py -s /home/ipad_gan/zlb/gaussian-splatting/data/360_v2/bicycle -r 8 --iterations 2000 --save_iterations 500 1000 1500 2000 --test_iterations 500 1000 1500 2000 --eval --checkpoint_iterations 500 1000 1500 2000
 
 ### add function of load and save
 
 jittor里面的save只针对list和dict 感觉只能用dict
  
 太坑了 文件格式还只能用pkl
+
+### test for webUI
+
+直接把输出的ply文件拖到webUI的网站里面就可以了
