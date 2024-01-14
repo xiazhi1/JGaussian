@@ -269,3 +269,62 @@ chatGPT回答
 此外，你的代码在执行jt.sync_all()时失败了，这可能是由于之前的CUDA错误导致的。你需要首先解决CUDA编译错误，然后再尝试运行jt.sync_all()
 
 我懂了 是因为我每次在做densification的迭代的时候同时进行写入，然后还是在densification之前进行的写入参数，然后这会导致densification还没来的及清理内存 我就又开始写 所以导致内存爆炸 调换一下位置后再尝试 然后把记录点不要和densification的迭代放在一起
+
+再尝试一组参数 为了节省时间 不训练500个iter 因为之前是在250个iter那里炸掉的
+
+CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 300 --save_ite
+rations 200 300 --test_iterations 200 300 --densify_from_iter 100 --densification_interval 50 --opacity_reset_interval 250 --densify_grad_threshol
+d 0.00001 --eval
+
+这一次在150个iter 也就是在第一次做densification时炸掉了
+
+报错原因
+
+ uses too much parameter space (0x1e64 bytes, 0x1100 max).
+ptxas fatal   : Ptx assembly aborted due to errors
+Traceback (most recent call last):
+  File "train.py", line 217, in <module>
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.st
+art_checkpoint, args.debug_from)
+  File "train.py", line 97, in training
+    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+  File "/home/zlb/JGaussian/scene/gaussian_model.py", line 401, in densify_and_prune
+    self.densify_and_split(grads, max_grad, extent) # 对梯度张量中的点在满足条件的点的位置生成新的点进行密集化并进行修剪
+  File "/home/zlb/JGaussian/scene/gaussian_model.py", line 366, in densify_and_split
+    stds = self.get_scaling[selected_pts_mask].repeat(N,1)
+  File "/home/zlb/anaconda3/envs/JGaussian/lib/python3.8/site-packages/jittor/contrib.py", line 183, in getitem
+    return getitem(x, slices.where())
+RuntimeError: [f 0113 20:47:31.283129 96 executor.cc:682] 
+Execute fused operator(71/96) failed. 
+[JIT Source]: /home/zlb/.cache/jittor/jt1.3.7/g++7.5.0/py3.8.18/Linux-4.15.0-2x1b/IntelRCoreTMi7x0c/default/cu11.3.58_sm_61/jit/__opkey0_array__T_
+int32__o_0__opkey1_array__T_float32__opkey2_array__T_float32__opkey3_arr___hash_be1b10fcd9ac5ab6_op.cc 
+
+也就是在进行密集化的时候爆炸的 应该是我把densification整个都移到了不需要梯度 这导致全部加载到了gpu上面 按道理来说 只要优化器参数保持需要梯度即可，开始尝试修改 感觉很多都无法修改啊。。。
+
+没办法 一步步调试详细修改吧 只给优化器参数留梯度就行 直接对优化器参数赋值的时候采用clone即可保证require_grad为True
+
+先训练一个不densification的吧 到时候再做消融实验也是有用的 也就是把densification开始的iter提到很高 10000
+
+CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 7000 --save_iterations 3000 7000 --test_iterations 3000 7000 --densify_from_iter 10000 --densification_interval 10000 --opacity_reset_interval 10000 --densify_grad_threshold 0.00001 --eval
+
+### Gaussian-torch
+
+ 7000次iter 参数默认  [ITER 7000] Evaluating train: L1 0.10286580845713617 PSNR 17.087402534484863 [14/01 03:30:37]
+
+[ITER 7000] Saving Gaussians [14/01 03:30:37]
+
+
+### JGaussian
+
+先训练一个不densification的吧 到时候再做消融实验也是有用的 也就是把densification开始的iter提到很高 10000
+
+在3000次save的时候报错 
+
+Optimizing
+Output folder: ./output/44c65c48-5 [14/01 00:32:41]
+Reading camera 194/194 [14/01 00:32:45]
+Loading Training Cameras [14/01 00:32:46]
+Loading Test Cameras [14/01 00:33:29]
+Number of points at initialisation :  54275 [14/01 00:33:36]
+Training progress:  43%|████████████████████████████▎                                     | 3000/7000 [2:58:43<4:17:05,  3.86s/it, Loss=0.1761041]Caught segfault at address 0x156d7000, thread_name: '', flush log...
+段错误 (核心已转储)

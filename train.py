@@ -27,6 +27,7 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+
     first_iter = 0
     prepare_output_and_logger(dataset) # 用于确定输出的位置
     gaussians = GaussianModel(dataset.sh_degree) # 创建gaussian对象

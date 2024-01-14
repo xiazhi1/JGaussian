@@ -220,7 +220,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(jt.minimum(self.get_opacity, jt.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
-        self._opacity = optimizable_tensors["opacity"]
+        self._opacity = optimizable_tensors["opacity"].clone()
 
     def load_ply(self, path):
         plydata = PlyData.read(path)
@@ -265,6 +265,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
         self.active_sh_degree = self.max_sh_degree
 
+    
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
         for i,group in enumerate(self.optimizer.param_groups): 
@@ -278,7 +279,8 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
                 group["params"][0] = tensor
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
-
+    
+    
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for i,group in enumerate(self.optimizer.param_groups): 
@@ -296,7 +298,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         return optimizable_tensors
 
     def prune_points(self, mask): # 该方法用于修剪掉不需要的点
-        valid_points_mask = jt.logical_not(mask) # 生成修剪掩码
+
+        with jt.no_grad():
+            valid_points_mask = jt.logical_not(mask) # 生成修剪掩码
         optimizable_tensors = self._prune_optimizer(valid_points_mask) # 从优化器参数中删除不需要的点
 
         self._xyz = optimizable_tensors["xyz"]
@@ -304,14 +308,15 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
-        self._rotation = optimizable_tensors["rotation"] 
+        self._rotation = optimizable_tensors["rotation"]
         self.screenspace_points = optimizable_tensors["screenspace_points"]# 将返回的优化器参数添加到高斯模型中
 
-        self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
-
-        self.denom = self.denom[valid_points_mask]
-        self.max_radii2D = self.max_radii2D[valid_points_mask] # 将梯度累积和梯度累积次数，以及最大2D半径中不需要的点删除
-
+        with jt.no_grad():
+            self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
+            self.denom = self.denom[valid_points_mask]
+            self.max_radii2D = self.max_radii2D[valid_points_mask] # 将梯度累积和梯度累积次数，以及最大2D半径中不需要的点删除
+    
+    
     def cat_tensors_to_optimizer(self, tensors_dict): # 有些奇怪的是 stored_state一直是None 不过Gaussian-splatting里也没用到
         optimizable_tensors = {}
         for i,group in enumerate(self.optimizer.param_groups): 
@@ -347,70 +352,78 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._features_rest = optimizable_tensors["f_rest"]
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
-        self._rotation = optimizable_tensors["rotation"] 
+        self._rotation = optimizable_tensors["rotation"]
         self.screenspace_points = optimizable_tensors["screenspace_points"]# 将新的优化器信息添加到高斯模型中
 
-        self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
-        self.denom = jt.zeros((self.get_xyz.shape[0], 1))
-        self.max_radii2D = jt.zeros((self.get_xyz.shape[0])) # 重置梯度累积和梯度累积次数，以及最大2D半径便于后续密集化和修剪
+        with jt.no_grad():
+            self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
+            self.denom = jt.zeros((self.get_xyz.shape[0], 1))
+            self.max_radii2D = jt.zeros((self.get_xyz.shape[0])) # 重置梯度累积和梯度累积次数，以及最大2D半径便于后续密集化和修剪
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
-        n_init_points = self.get_xyz.shape[0]
-        # Extract points that satisfy the gradient condition
-        padded_grad = jt.zeros((n_init_points))
-        padded_grad[:grads.shape[0]] = grads.squeeze()
-        selected_pts_mask = jt.where(padded_grad >= grad_threshold, True, False)
-        selected_pts_mask = jt.logical_and(selected_pts_mask,
-                                              jt.max(self.get_scaling, dim=1).data > self.percent_dense*scene_extent) # 生成掩码
+        with jt.no_grad():
+            n_init_points = self.get_xyz.shape[0]
+            # Extract points that satisfy the gradient condition
+            padded_grad = jt.zeros((n_init_points))
+            padded_grad[:grads.shape[0]] = grads.squeeze()
+            selected_pts_mask = jt.where(padded_grad >= grad_threshold, True, False)
+            selected_pts_mask = jt.logical_and(selected_pts_mask,
+                                                jt.max(self.get_scaling, dim=1).data > self.percent_dense*scene_extent) # 生成掩码
 
-        stds = self.get_scaling[selected_pts_mask].repeat(N,1)
-        means =jt.zeros((stds.size(0), 3))
-        samples = jt.normal(mean=means, std=stds)
-        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
-        new_xyz = nn.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
-        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
-        new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
-        new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
-        new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1) 
-        new_opacity = self._opacity[selected_pts_mask].repeat(N,1) # 利用掩码提取所有满足条件的点，并进行N次切割得到新的位置、缩放和旋转信息
+            stds = self.get_scaling[selected_pts_mask].repeat(N,1)
+            means =jt.zeros((stds.size(0), 3))
+            samples = jt.normal(mean=means, std=stds)
+            rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
+            new_xyz = nn.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+            new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
+            new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
+            new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
+            new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1) 
+            new_opacity = self._opacity[selected_pts_mask].repeat(N,1) # 利用掩码提取所有满足条件的点，并进行N次切割得到新的位置、缩放和旋转信息
+
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
 
-        prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum().item(), dtype=bool)))
+        with jt.no_grad():
+            prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum().item(), dtype=bool)))
         self.prune_points(prune_filter) # 生成修建掩码后修剪掩码中的点
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent): # 该方法用于对梯度张量中的点直接复制满足条件的点进行密集化
-        # Extract points that satisfy the gradient condition
-        selected_pts_mask = jt.where(jt.norm(grads, dim=-1) >= grad_threshold, True, False)
-        selected_pts_mask = jt.logical_and(selected_pts_mask,
-                                              jt.max(self.get_scaling, dim=1).data <= self.percent_dense*scene_extent) #通过计算梯度范数并与阈值比较，生成掩码，再加以操作得到最终掩码
-        
-        new_xyz = self._xyz[selected_pts_mask]
-        new_features_dc = self._features_dc[selected_pts_mask]
-        new_features_rest = self._features_rest[selected_pts_mask]
-        new_opacities = self._opacity[selected_pts_mask]
-        new_scaling = self._scaling[selected_pts_mask]
-        new_rotation = self._rotation[selected_pts_mask] #利用掩码从原始张量中提取满足条件的点
+        with jt.no_grad():
+            # Extract points that satisfy the gradient condition
+            selected_pts_mask = jt.where(jt.norm(grads, dim=-1) >= grad_threshold, True, False)
+            selected_pts_mask = jt.logical_and(selected_pts_mask,
+                                                jt.max(self.get_scaling, dim=1).data <= self.percent_dense*scene_extent) #通过计算梯度范数并与阈值比较，生成掩码，再加以操作得到最终掩码
+            
+            new_xyz = self._xyz[selected_pts_mask]
+            new_features_dc = self._features_dc[selected_pts_mask]
+            new_features_rest = self._features_rest[selected_pts_mask]
+            new_opacities = self._opacity[selected_pts_mask]
+            new_scaling = self._scaling[selected_pts_mask]
+            new_rotation = self._rotation[selected_pts_mask] #利用掩码从原始张量中提取满足条件的点
     
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation) #将提取的点添加到原始张量中
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size): # 该方法用于对高斯模型进行密集化和修剪。
-        grads = self.xyz_gradient_accum / self.denom
-        grads[grads.isnan()] = 0.0 # 计算梯度并将梯度张量中的NaN值替换为0
+        with jt.no_grad():
+            grads = self.xyz_gradient_accum / self.denom
+            grads[grads.isnan()] = 0.0 # 计算梯度并将梯度张量中的NaN值替换为0
 
         self.densify_and_clone(grads, max_grad, extent) # 对梯度张量中的点直接复制满足条件的点进行密集化
         self.densify_and_split(grads, max_grad, extent) # 对梯度张量中的点在满足条件的点的位置生成新的点进行密集化并进行修剪
 
-        prune_mask = (self.get_opacity < min_opacity).squeeze() # 修剪掩码，用于标记不透明度小于阈值的点
-        if max_screen_size: # 如果场景最大尺寸不为空，则将大点的掩码和缩放因子大于场景范围的点添加到修剪掩码中
-            big_points_vs = self.max_radii2D > max_screen_size 
-            big_points_ws = self.get_scaling.max(dim=1).data > 0.1 * extent
-            prune_mask = jt.logical_or(jt.logical_or(prune_mask, big_points_vs), big_points_ws)
+        with jt.no_grad():
+            prune_mask = (self.get_opacity < min_opacity).squeeze() # 修剪掩码，用于标记不透明度小于阈值的点
+            if max_screen_size: # 如果场景最大尺寸不为空，则将大点的掩码和缩放因子大于场景范围的点添加到修剪掩码中
+                big_points_vs = self.max_radii2D > max_screen_size 
+                big_points_ws = self.get_scaling.max(dim=1).data > 0.1 * extent
+                prune_mask = jt.logical_or(jt.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask) # 修剪掩码中的点
 
         jt.clean_graph()
         jt.sync_all()
         jt.gc() # 清理图，同步所有设备，进行垃圾回收
 
+    @ jt.no_grad()
     def add_densification_stats(self,viewspace_point_tensor_grad,update_filter):
         self.xyz_gradient_accum[update_filter] += jt.norm(viewspace_point_tensor_grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
