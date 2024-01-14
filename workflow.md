@@ -345,5 +345,34 @@ CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 
 rations 200 300 --test_iterations 200 300 --densify_from_iter 100 --densification_interval 50 --opacity_reset_interval 250 --densify_grad_threshol
 d 0.00001 --eval
 
-### add tensorboard
+加了del 删除部分局部参数 已经关闭延迟执行定位错误 变慢了有两个原因 1是del后gc 消耗了一定时间 关闭延迟执行 也会变慢
 
+完美 用了之后可以过300次iter了 开始调试加载和保存checkpoints 消耗时间 26分钟 对应前面100次iter的9分钟 大差不差，开始1000次迭代训练
+
+### JGaussian 结果比较
+
+参数：CUDA_VISIBLE_DEVICES=1 python train.py -s /home/ipad_gan/zlb/gaussian-splatting/data/360_v2/bicycle -r 8 --iterations 100 --save_iterations 50 100 --test_iterations 50 100 --densify_from_iter 50 --densification_interval 10 --opacity_reset_interval 50 --densify_grad_threshold 0.0000002 --eval
+
+  SSIM :    0.1045412                                                                                                                             
+  PSNR :   10.6238003 
+
+参数：CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 300 --save_ite
+rations 200 300 --test_iterations 200 300 --densify_from_iter 100 --densification_interval 50 --opacity_reset_interval 250 --densify_grad_threshol
+d 0.00001 --eval
+
+SSIM :    0.3326966
+PSNR :   15.6818419
+
+参数：python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 1000 --save_iterations 500 1000 --test_iterations 500 1000 --eval
+
+SSIM :    0.4699438
+PSNR :   19.7148170
+
+参数：python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 7000 --save_iterations 3000 7000 --test_iterations 3000 7000 --eval
+
+
+### add function of load and save
+
+jittor里面的save只针对list和dict 感觉只能用dict
+ 
+太坑了 文件格式还只能用pkl

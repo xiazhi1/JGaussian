@@ -35,7 +35,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene(dataset, gaussians) # 创建scene对象
     gaussians.training_setup(opt) # 设置gaussian对象的训练参数
     if checkpoint:
-        (model_params, first_iter) = jt.load(checkpoint)
+        model_params, first_iter = jt.load(checkpoint)['gaussian_param'],jt.load(checkpoint)['iter']
         gaussians.restore(model_params, opt)
     
     viewpoint_stack = None # 用于存储视角信息
@@ -126,7 +126,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                jt.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+                jt.save({"gaussian_param":gaussians.capture(),"iter":iteration}, scene.model_path + "/chkpnt" + str(iteration) + ".pkl")
 
         
 
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     
 
     jt.flags.use_cuda = 1
-    jt.flags.lazy_execution=0
+    # jt.flags.lazy_execution=0
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)

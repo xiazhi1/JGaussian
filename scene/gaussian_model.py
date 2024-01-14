@@ -58,37 +58,40 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self.setup_functions()
 
     def capture(self):
-        return (
-            self.active_sh_degree,
-            self._xyz,
-            self._features_dc,
-            self._features_rest,
-            self._scaling,
-            self._rotation,
-            self._opacity,
-            self.max_radii2D,
-            self.xyz_gradient_accum,
-            self.denom,
-            self.optimizer.state_dict(),
-            self.spatial_lr_scale,
-        )
+        return {
+            "active_sh_degree": self.active_sh_degree,
+            "_xyz": self._xyz,
+            "_features_dc": self._features_dc,
+            "_features_rest": self._features_rest,
+            "_scaling": self._scaling,
+            "_rotation": self._rotation,
+            "_opacity": self._opacity,
+            "screenspace_points": self.screenspace_points,
+            "max_radii2D": self.max_radii2D,
+            "xyz_gradient_accum": self.xyz_gradient_accum,
+            "denom": self.denom,
+            "optimizer_state": self.optimizer.state_dict(),
+            "spatial_lr_scale": self.spatial_lr_scale,
+        }
     
     def restore(self, model_args, training_args):
-        (self.active_sh_degree, 
-        self._xyz, 
-        self._features_dc, 
-        self._features_rest,
-        self._scaling, 
-        self._rotation, 
-        self._opacity,
-        self.max_radii2D, 
-        xyz_gradient_accum, 
-        denom,
-        opt_dict, 
-        self.spatial_lr_scale) = model_args
+        self.active_sh_degree = model_args["active_sh_degree"]
+        self._xyz = model_args["_xyz"]
+        self._features_dc = model_args["_features_dc"]
+        self._features_rest = model_args["_features_rest"]
+        self._scaling = model_args["_scaling"]
+        self._rotation = model_args["_rotation"]
+        self._opacity = model_args["_opacity"]
+        self.max_radii2D = model_args["max_radii2D"]
+        xyz_gradient_accum = model_args["xyz_gradient_accum"] 
+        denom = model_args["denom"]
+        screenspace_points = model_args["screenspace_points"]
+        opt_dict = model_args["optimizer_state"] 
+        self.spatial_lr_scale = model_args["spatial_lr_scale"]
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
+        self.screenspace_points = screenspace_points
         self.optimizer.load_state_dict(opt_dict)
 
     @property
