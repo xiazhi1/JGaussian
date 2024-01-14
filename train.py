@@ -192,6 +192,7 @@ if __name__ == "__main__":
     
 
     jt.flags.use_cuda = 1
+    jt.flags.lazy_execution=0
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)

@@ -220,7 +220,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(jt.minimum(self.get_opacity, jt.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
-        self._opacity = optimizable_tensors["opacity"].clone()
+        self._opacity = optimizable_tensors["opacity"]
 
     def load_ply(self, path):
         plydata = PlyData.read(path)
@@ -311,6 +311,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._rotation = optimizable_tensors["rotation"]
         self.screenspace_points = optimizable_tensors["screenspace_points"]# 将返回的优化器参数添加到高斯模型中
 
+        del optimizable_tensors # 删除临时变量
+        jt.gc()
+
         with jt.no_grad():
             self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
             self.denom = self.denom[valid_points_mask]
@@ -355,6 +358,9 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self._rotation = optimizable_tensors["rotation"]
         self.screenspace_points = optimizable_tensors["screenspace_points"]# 将新的优化器信息添加到高斯模型中
 
+        del optimizable_tensors,d # 删除临时变量
+        jt.gc()
+
         with jt.no_grad():
             self.xyz_gradient_accum = jt.zeros((self.get_xyz.shape[0], 1))
             self.denom = jt.zeros((self.get_xyz.shape[0], 1))
@@ -381,11 +387,20 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1) 
             new_opacity = self._opacity[selected_pts_mask].repeat(N,1) # 利用掩码提取所有满足条件的点，并进行N次切割得到新的位置、缩放和旋转信息
 
+            del stds, means, samples, rots,padded_grad # 删除临时变量
+            jt.gc()
+
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+        
+        del new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation # 删除临时变量
+        jt.gc()
 
         with jt.no_grad():
             prune_filter = jt.concat((selected_pts_mask, jt.zeros(N * selected_pts_mask.sum().item(), dtype=bool)))
         self.prune_points(prune_filter) # 生成修建掩码后修剪掩码中的点
+
+        del prune_filter , selected_pts_mask# 删除临时变量
+        jt.gc()
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent): # 该方法用于对梯度张量中的点直接复制满足条件的点进行密集化
         with jt.no_grad():
@@ -400,8 +415,10 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             new_opacities = self._opacity[selected_pts_mask]
             new_scaling = self._scaling[selected_pts_mask]
             new_rotation = self._rotation[selected_pts_mask] #利用掩码从原始张量中提取满足条件的点
-    
+
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation) #将提取的点添加到原始张量中
+        del new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation # 删除临时变量
+        jt.gc()
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size): # 该方法用于对高斯模型进行密集化和修剪。
 
