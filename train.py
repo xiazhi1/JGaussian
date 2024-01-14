@@ -23,13 +23,14 @@ from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+from tensorboardX import SummaryWriter
 
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
 
     first_iter = 0
-    prepare_output_and_logger(dataset) # 用于确定输出的位置
+    tb_writer = prepare_output_and_logger(dataset) # 用于确定输出的位置
     gaussians = GaussianModel(dataset.sh_degree) # 创建gaussian对象
     scene = Scene(dataset, gaussians) # 创建scene对象
     gaussians.training_setup(opt) # 设置gaussian对象的训练参数
@@ -44,6 +45,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     for iteration in range(first_iter, opt.iterations + 1):   # 测试与网络gui交互      
         
         iter_start = time.time()
+
+        gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
@@ -115,7 +118,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(iteration, l1_loss, testing_iterations, scene, gaussian_renderer.forward)    
+            training_report(tb_writer,iteration,Ll1,loss, l1_loss, iter_end-iter_start,testing_iterations, scene, gaussian_renderer.forward)    
             
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -125,12 +128,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-
-        # print("time of one iter:",iter_end-iter_start) # 打印每个iteration的时间
-        # # jt.clean_graph()
-        # # jt.sync_all()
-        # # jt.gc()
-        # jt.display_memory_info()
         
 
 def prepare_output_and_logger(args):    
@@ -147,18 +144,22 @@ def prepare_output_and_logger(args):
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
     
+    # Set up tensorboard writer
+    tb_writer = SummaryWriter(args.model_path)
+    return tb_writer
+    
 
     
 
-def training_report(iteration,l1_loss, testing_iterations, scene : Scene, renderFunc):
+def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterations, scene : Scene, renderFunc):
+    if tb_writer:
+        tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
+        tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
+        tb_writer.add_scalar('iter_time', elapsed, iteration)
     
     # Report test and samples of training set
     if iteration in testing_iterations:
-
-        jt.clean_graph()
-        jt.sync_all()
         jt.gc()
-
         validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
                               {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
 
@@ -166,18 +167,25 @@ def training_report(iteration,l1_loss, testing_iterations, scene : Scene, render
             if config['cameras'] and len(config['cameras']) > 0:
                 l1_test = 0.0
                 psnr_test = 0.0
-                for viewpoint in enumerate(config['cameras']):
-                    image = jt.clamp(renderFunc(viewpoint[1], scene.gaussians)["render"], min_v=0.0, max_v=1.0)
-                    gt_image = jt.clamp(viewpoint[1].original_image.astype(jt.float32), min_v=0.0, max_v=1.0)
+                for idx,viewpoint in enumerate(config['cameras']):
+                    image = jt.clamp(renderFunc(viewpoint, scene.gaussians)["render"], min_v=0.0, max_v=1.0)
+                    gt_image = jt.clamp(viewpoint.original_image.astype(jt.float32), min_v=0.0, max_v=1.0)
+                    if tb_writer and (idx<5):
+                        tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None].numpy(), global_step=iteration)
+                        if iteration == testing_iterations[0]:
+                            tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None].numpy(), global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])          
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
-                
+                if tb_writer:
+                    tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test.numpy(), iteration)
+                    tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test.numpy(), iteration)
+        if tb_writer:
+            tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity.numpy(), iteration)
+            tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)        
 
-        jt.clean_graph()
-        jt.sync_all()
         jt.gc()
 
 if __name__ == "__main__":

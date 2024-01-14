@@ -404,6 +404,11 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation) #将提取的点添加到原始张量中
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size): # 该方法用于对高斯模型进行密集化和修剪。
+
+        jt.clean_graph()
+        jt.sync_all()
+        jt.gc() # 清理图，同步所有设备，进行垃圾回收
+        
         with jt.no_grad():
             grads = self.xyz_gradient_accum / self.denom
             grads[grads.isnan()] = 0.0 # 计算梯度并将梯度张量中的NaN值替换为0

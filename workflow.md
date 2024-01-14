@@ -301,11 +301,21 @@ int32__o_0__opkey1_array__T_float32__opkey2_array__T_float32__opkey3_arr___hash_
 
 也就是在进行密集化的时候爆炸的 应该是我把densification整个都移到了不需要梯度 这导致全部加载到了gpu上面 按道理来说 只要优化器参数保持需要梯度即可，开始尝试修改 感觉很多都无法修改啊。。。
 
-没办法 一步步调试详细修改吧 只给优化器参数留梯度就行 直接对优化器参数赋值的时候采用clone即可保证require_grad为True
+没办法 一步步调试详细修改吧 只给优化器参数留梯度就行
 
-先训练一个不densification的吧 到时候再做消融实验也是有用的 也就是把densification开始的iter提到很高 10000
 
-CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 7000 --save_iterations 3000 7000 --test_iterations 3000 7000 --densify_from_iter 10000 --densification_interval 10000 --opacity_reset_interval 10000 --densify_grad_threshold 0.00001 --eval
+
+**jittor 通过 jt.flags.use_cuda 设置是否使用 GPU，所有的 jt.Var 根据此开关自动使用 cpu 或者 gpu 计算，不需要关心 var 所在的设备。**
+
+尝试能否用cpu函数将var移到cpu计算 没道理啊 Gaussian_torch的std means这些也是在cuda上面计算的
+
+可能是局部变量过多和过大 导致参数空间被耗尽 尝试提高下梯度阈值来减小需要修改的mask点 也可以尽可能的减少局部变量 但会使可读性变差
+
+
+请注意，减少局部变量可能会使代码更难理解和维护，因此在优化代码时需要权衡代码的可读性和性能。
+
+有个思路是能不能在使用完densification中的局部变量后，就将其从CUDA参数空间中删除掉
+
 
 ### Gaussian-torch
 
@@ -318,7 +328,7 @@ CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 
 
 先训练一个不densification的吧 到时候再做消融实验也是有用的 也就是把densification开始的iter提到很高 10000
 
-在3000次save的时候报错 
+在3000次save的时候报错 （这个bug可能是因为没有densification 定期释放内存？）
 
 Optimizing
 Output folder: ./output/44c65c48-5 [14/01 00:32:41]
@@ -328,3 +338,12 @@ Loading Test Cameras [14/01 00:33:29]
 Number of points at initialisation :  54275 [14/01 00:33:36]
 Training progress:  43%|████████████████████████████▎                                     | 3000/7000 [2:58:43<4:17:05,  3.86s/it, Loss=0.1761041]Caught segfault at address 0x156d7000, thread_name: '', flush log...
 段错误 (核心已转储)
+
+修改densification后再次测试300次iter
+
+CUDA_VISIBLE_DEVICES=0 python train.py -s /home/zlb/JGaussian/data/bicycle -r 8 --iterations 300 --save_ite
+rations 200 300 --test_iterations 200 300 --densify_from_iter 100 --densification_interval 50 --opacity_reset_interval 250 --densify_grad_threshol
+d 0.00001 --eval
+
+### add tensorboard
+
