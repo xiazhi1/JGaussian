@@ -104,11 +104,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             # Log and save
             training_report(tb_writer,iteration,Ll1,loss, l1_loss, iter_end-iter_start,testing_iterations, scene, gaussian_renderer.forward)    
             
-            if (iteration in saving_iterations):
+            if (iteration % saving_iterations == 0):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
 
-            if (iteration in checkpoint_iterations):
+            if (iteration % checkpoint_iterations == 0):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save({"gaussian_param":gaussians.capture(),"iter":iteration}, scene.model_path + "/chkpnt" + str(iteration) + ".pkl")
 
@@ -142,8 +142,11 @@ def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterat
         tb_writer.add_scalar('iter_time', elapsed, iteration)
     
     # Report test and samples of training set
-    if iteration in testing_iterations:
+    if iteration % testing_iterations == 0:
         jt.gc()
+        current_lr = scene.gaussians.optimizer.param_groups[0]['lr']
+         # 记录当前xyz的学习率
+        tb_writer.add_scalar('Learning Rate', current_lr, iteration)
         validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
                               {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
 
@@ -156,7 +159,7 @@ def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterat
                     gt_image = jt.clamp(viewpoint.original_image.astype(jt.float32), min_v=0.0, max_v=1.0)
                     if tb_writer and (idx<5):
                         tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None].numpy(), global_step=iteration)
-                        if iteration == testing_iterations[0]:
+                        if iteration == testing_iterations:
                             tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None].numpy(), global_step=iteration)
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
@@ -182,14 +185,12 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
-    parser.add_argument('--ip', type=str, default="127.0.0.1")
-    parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
+    parser.add_argument("--test_iterations", type=int, default=500)
+    parser.add_argument("--save_iterations", type=int, default=500)
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--checkpoint_iterations", type=int, default=500)
     parser.add_argument("--start_checkpoint", type=str, default = None)
     # # use to Multi-card parallel training
     # parser.add_argument("--local_rank", type=int,default=-1)
@@ -198,7 +199,6 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
 
     # torch.cuda.set_device(args.local_rank)  # before your code runs
-    args.save_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)
 
