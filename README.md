@@ -1,7 +1,7 @@
 # JGaussian
 Use Jittor to recurrent Gaussain Splatting
 
-Project is in the process...
+Project is in the process...  
 
 ## how to use?
 
@@ -11,7 +11,7 @@ After your training , if you want it to look in web , you can download your outp
 
 Noticed that because of CUDA memory , we all reduce the image resolution to 0.125 by using args of "-r" "8"
 
-Now we support 1000 iterations in a TiTanXP in 1 hours around , and its SSIM is 0.47, PSNR is 19.71
+Now we support 1000 iterations in a TiTanXP in 1 hours around , and its SSIM is 0.47, PSNR is 19.71 , 2000 iterations in a TiTanXP in 2.5 hours around, and its SSIM is 0.51 PSNR is 19.99.
 
 compare to purely pytorch Gaussian-splatting [Gaussian_torch](https://github.com/xiazhi1/Gaussian_torch)
 
