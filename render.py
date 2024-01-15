@@ -37,6 +37,10 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
     with jt.no_grad(): # 忽略梯度计算，用于推理，节省内存
         gaussians = GaussianModel(dataset.sh_degree)
         scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False) # 加载场景与Gaussian模型
+
+        if iteration <= 3000:   # 默认球谐函数为3
+            gaussians.active_sh_degree = (iteration-1) // 1000 # 前3000次迭代的球谐函数为0，1，2，不为3，需要重新设置
+    
         white_background = dataset.white_background
         if not skip_train:
              render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians,white_background=white_background)
