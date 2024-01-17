@@ -141,7 +141,6 @@ def get_rect(pix_coord, radii, width, height): # 该函数用于计算2D高斯�
 
 
 from utils.sh_utils import eval_sh
-import contextlib
 
 class GaussianRenderer():
     """
@@ -156,8 +155,6 @@ class GaussianRenderer():
         self.active_sh_degree = active_sh_degree 
         self.debug = False
         self.white_bkgd = white_bkgd
-        # y, x = jt.meshgrid(jt.arange(256), jt.arange(256))
-        # self.pix_coord = jt.stack((x, y), dim=-1) # 用此来实现torch.meshgrid功能
         
     
     def build_color(self, means3D, shs, camera): # 计算每个3D点的颜色
@@ -172,10 +169,7 @@ class GaussianRenderer():
         rect = get_rect(means2D, radii, width=camera.image_width, height=camera.image_height)
         y,x = jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width))
         self.pix_coord = jt.stack((x, y), dim=-1) # 用此来实现torch.meshgrid功能
-        # self.pix_coord = jt.stack(jt.meshgrid(jt.arange(camera.image_height), jt.arange(camera.image_width)), dim=-1)[:, ::-1] # change to image size
         self.render_color = jt.ones(*self.pix_coord.shape[:2], 3)
-        # self.render_depth = jt.zeros(*self.pix_coord.shape[:2], 1)
-        # self.render_alpha = jt.zeros(*self.pix_coord.shape[:2], 1) # 用于存储渲染结果
 
         
         TILE_SIZE = 16 # 用于分块渲染
@@ -184,7 +178,7 @@ class GaussianRenderer():
                 # check if the rectangle penetrate the tile
                 over_tl = rect[0][..., 0].clamp(min_v=w), rect[0][..., 1].clamp(min_v=h)
                 over_br = rect[1][..., 0].clamp(max_v=w+TILE_SIZE-1), rect[1][..., 1].clamp(max_v=h+TILE_SIZE-1) # 计算矩形区域与tile的交集的坐标
-                in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # 3D gaussian in the tile 找出与当天tile有交集的3D gaussian
+                in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # 3D gaussian in the tile 找出与当前tile有交集的3D gaussian
                 
                 if not in_mask.sum() > 0: # 如果没有交集则跳过
                     continue
@@ -213,11 +207,7 @@ class GaussianRenderer():
                 remaining_cols = min(TILE_SIZE, self.render_color.shape[1] - w)
                 # 将 tile_color 存储到 self.render_color 的子区域中
                 self.render_color[h:h+remaining_rows, w:w+remaining_cols] = tile_color.reshape(remaining_rows, remaining_cols, -1)
-                # loss = self.render_color.sum()
-                # pc.optimizer.backward(loss)
-                # print("loss:",loss)
                 
-
         # jt.display_memory_info()
         image = jt.transpose(self.render_color,(2,0,1))
    
@@ -258,10 +248,6 @@ class GaussianRenderer():
         mean_coord_y = ((mean_ndc[..., 1] + 1) * camera.image_height - 1.0) * 0.5
         means2D = jt.stack([mean_coord_x, mean_coord_y], dim=-1) # 用OPENGL的坐标系计算2D高斯分布的p屏幕中心点坐标
         
-        # # # # test to find grad error
-        # loss = cov3d.sum()
-        # pc.optimizer.backward(loss)
-
         rets = self.render(
             camera = camera, 
             means2D=means2D,

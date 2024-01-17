@@ -147,19 +147,18 @@ After your training , if you want it to look in web , you can download your outp
 
 ## Results
 
-Now we support 1000 iterations in a TiTanX in 1 hours around , and its SSIM is 0.47, PSNR is 19.73 ; 2000 iterations in a TiTanX in 2.5 hours around, and its SSIM is 0.51 PSNR is 20.04; 2500 iterations in a TiTanX in 3-4 hours around, and its SSIM is 0.54 PSNR is 20.34.
+the rusults is like below , notice that all test is finished in TITANXP,We believe that the reason for the decline in rendering quality after adding densification is that the Guassian points are not densified but are constantly pruned due to inappropriate densification parameters. This is also the focus of the next step of parameter adjustment.
 
-However , we find that when iteration up to 3000, its rusult begin to decrease . Maybe this is because the setup of learning rate and other hyperparameters . Now we are trying to reach the upper bound of the model by  adjusting the parameters. If you have better result or any questions, welcome to pull request or open issues.
+![table](image/table.png)
+
 
 compare to purely pytorch Gaussian-splatting [Gaussian_torch](https://github.com/xiazhi1/Gaussian_torch)
 
-1000 iterations in a TiTanX in 1.5 hours around , and its SSIM is 0.45, PSNR is 19.68
 
-JGaussian is faster and better which shows jittor's strength in speed
+JGaussian is faster which shows jittor's strength in speed
 
 compare to official Gaussian-splatting [https://github.com/graphdeco-inria/gaussian-splatting](https://github.com/graphdeco-inria/gaussian-splatting)
 
-7000 iterations in a TiTanX in 9 minutes around , and its SSIM is 0.81, PSNR is 26
 
 CUDA rasterizer is more faster and better than pytorch or jittor rasterizer.
 
@@ -172,3 +171,5 @@ CUDA rasterizer is more faster and better than pytorch or jittor rasterizer.
 [https://github.com/Jittor/jittor](https://github.com/Jittor/jittor)
 
 [https://github.com/antimatter15/splat](https://github.com/antimatter15/splat)
+
+[Gaussian_torch](https://github.com/xiazhi1/Gaussian_torch)

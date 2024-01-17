@@ -1,14 +1,3 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use 
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
-
 import jittor as jt
 import numpy as np
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
@@ -304,7 +293,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
         with jt.no_grad():
             valid_points_mask = jt.logical_not(mask) # 生成修剪掩码
-        optimizable_tensors = self._prune_optimizer(valid_points_mask) # 从优化器参数中删除不需要的点
+        optimizable_tensors = self._prune_optimizer(valid_points_mask) # 从优化器参数中删除不需要的点是通过只保留需要的点实现的
 
         self._xyz = optimizable_tensors["xyz"]
         self._features_dc = optimizable_tensors["f_dc"]
@@ -377,7 +366,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             padded_grad[:grads.shape[0]] = grads.squeeze()
             selected_pts_mask = jt.where(padded_grad >= grad_threshold, True, False)
             selected_pts_mask = jt.logical_and(selected_pts_mask,
-                                                jt.max(self.get_scaling, dim=1).data > self.percent_dense*scene_extent) # 生成掩码
+                                                jt.max(self.get_scaling, dim=1).data > self.percent_dense*scene_extent) # 同样的方式生成掩码
 
             stds = self.get_scaling[selected_pts_mask].repeat(N,1)
             means =jt.zeros((stds.size(0), 3))
@@ -410,7 +399,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             # Extract points that satisfy the gradient condition
             selected_pts_mask = jt.where(jt.norm(grads, dim=-1) >= grad_threshold, True, False)
             selected_pts_mask = jt.logical_and(selected_pts_mask,
-                                                jt.max(self.get_scaling, dim=1).data <= self.percent_dense*scene_extent) #通过计算梯度范数并与阈值比较，生成掩码，再加以操作得到最终掩码
+                                                jt.max(self.get_scaling, dim=1).data <= self.percent_dense*scene_extent) #通过计算梯度范数并与阈值比较，生成掩码，再判断是否超过场景半径得到最终掩码
             
             new_xyz = self._xyz[selected_pts_mask]
             new_features_dc = self._features_dc[selected_pts_mask]

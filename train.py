@@ -1,18 +1,8 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use 
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
-
 import os,time
 import jittor as jt
 import argparse
 from random import randint
+import random
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer.gauss_render import GaussianRenderer
 import sys
@@ -144,9 +134,17 @@ def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterat
     # Report test and samples of training set
     if iteration % testing_iterations == 0:
         jt.gc()
-        current_lr = scene.gaussians.optimizer.param_groups[0]['lr']
+        
+        # 记录梯度范数
+        grads = scene.gaussians.xyz_gradient_accum / scene.gaussians.denom
+        grads[grads.isnan()] = 0.0 # 计算梯度并将梯度张量中的NaN值替换为0
+        grads_record = jt.norm(grads, dim=-1).mean().numpy()
+        tb_writer.add_scalar('grads_norm', grads_record, iteration)
          # 记录当前xyz的学习率
+        current_lr = scene.gaussians.optimizer.param_groups[0]['lr']
         tb_writer.add_scalar('Learning Rate', current_lr, iteration)
+
+
         validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
                               {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
 
@@ -177,7 +175,6 @@ def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterat
 
 if __name__ == "__main__":
     
-
     jt.flags.use_cuda = 1
     jt.flags.lazy_execution=0
     # Set up command line argument parser
