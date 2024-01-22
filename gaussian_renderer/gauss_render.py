@@ -198,15 +198,16 @@ class GaussianRenderer():
                     + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 1, 0])) # 计算每个像素在3D高斯分布中的权重
                 
                 alpha = (gauss_weight[..., None] * sorted_opacity[None]).clamp(max_v=0.99) # B P 1，计算每个像素的透明度
-                T = jt.concat([jt.ones_like(alpha[:,:1]), 1-alpha[:,1:]], dim=1).cumprod(dim=1) # 计算每个像素在每个3D高斯分布的累积透明度
+                T = jt.concat([jt.ones_like(alpha[:,:1]), 1-alpha[:,1:]], dim=1).cumprod(dim=1) # 计算每个像素在每个3D高斯分布的累积透明度 α-blending
                 acc_alpha = (alpha * T).sum(dim=1) # 计算每个像素的累积透明度
-                tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
+                tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0) # 用α-blending计算每个像素的颜色
                 # 将tile_color存储到self.render_color的子区域中
                 # 计算实际的行数和列数
                 remaining_rows = min(TILE_SIZE, self.render_color.shape[0] - h)
                 remaining_cols = min(TILE_SIZE, self.render_color.shape[1] - w)
                 # 将 tile_color 存储到 self.render_color 的子区域中
                 self.render_color[h:h+remaining_rows, w:w+remaining_cols] = tile_color.reshape(remaining_rows, remaining_cols, -1)
+                
                 
         # jt.display_memory_info()
         image = jt.transpose(self.render_color,(2,0,1))
@@ -229,7 +230,7 @@ class GaussianRenderer():
         mean_ndc, mean_view, in_mask = projection_ndc(means3D, 
                 viewmatrix=camera.world_view_transform, 
                 projmatrix=camera.projection_matrix)
-        depths = mean_view[:,2] # 提取视图空间中的深度信息
+        depths = mean_view[:,2] # 提取视图空间中的深度信息,也就是视图空间的z坐标
         
         color = self.build_color(means3D=means3D, shs=shs, camera=camera) # 计算每个3D点的颜色 测试发现guassian_xyz相对于color的梯度是0，但是torch-spltting中相对梯度也是0,其他的shs也就是feature都有梯度
         

@@ -80,7 +80,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         self.training_setup(training_args)
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
-        self.screenspace_points = screenspace_points
+        self.screenspace_points.assign(screenspace_points)
         self.optimizer.load_state_dict(opt_dict)
 
     @property
@@ -263,10 +263,10 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         for i,group in enumerate(self.optimizer.param_groups): 
             if group["name"] == name:
                 stored_state = self.optimizer.param_groups[i] # 用id作为索引
-
-                stored_state["values"] = [jt.zeros_like(tensor)]
-                stored_state["m"] = [jt.zeros_like(tensor)]
-                stored_state["grads"] = [jt.zeros_like(tensor)]
+                with jt.no_grad():
+                    stored_state["values"] = [jt.zeros_like(tensor)]
+                    stored_state["m"] = [jt.zeros_like(tensor)]
+                    stored_state["grads"] = [jt.zeros_like(tensor)]
 
                 group["params"][0] = tensor
                 optimizable_tensors[group["name"]] = group["params"][0]
@@ -278,9 +278,10 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
         for i,group in enumerate(self.optimizer.param_groups): 
             stored_state = self.optimizer.param_groups[i] # 用id作为索引
             if stored_state is not None:
-                stored_state["values"] = [stored_state["values"][0][mask]]
-                stored_state["m"] = [stored_state["m"][0][mask]]
-                stored_state["grads"] = [stored_state["grads"][0][mask]]
+                with jt.no_grad():
+                    stored_state["values"] = [stored_state["values"][0][mask]]
+                    stored_state["m"] = [stored_state["m"][0][mask]]
+                    stored_state["grads"] = [stored_state["grads"][0][mask]]
 
                 group["params"][0] = (group["params"][0][mask])
                 optimizable_tensors[group["name"]] = group["params"][0]
@@ -312,17 +313,17 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
             self.max_radii2D = self.max_radii2D[valid_points_mask] # 将梯度累积和梯度累积次数，以及最大2D半径中不需要的点删除
     
     
-    def cat_tensors_to_optimizer(self, tensors_dict): # 有些奇怪的是 stored_state一直是None 不过Gaussian-splatting里也没用到
+    def cat_tensors_to_optimizer(self, tensors_dict): 
         optimizable_tensors = {}
         for i,group in enumerate(self.optimizer.param_groups): 
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.param_groups[i] # 用id作为索引
             if stored_state is not None:
-
-                stored_state["values"] = [jt.concat((stored_state["values"][0], jt.zeros_like(extension_tensor)), dim=0)]
-                stored_state["m"] = [jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0)] # split 的时候concat张量反而变小了
-                stored_state["grads"] = [jt.concat((stored_state["grads"][0], jt.zeros_like(extension_tensor)), dim=0)] # 共享内存了 所以直接赋值list即可
+                with jt.no_grad():
+                    stored_state["values"] = [jt.concat((stored_state["values"][0], jt.zeros_like(extension_tensor)), dim=0)]
+                    stored_state["m"] = [jt.concat((stored_state["m"][0], jt.zeros_like(extension_tensor)), dim=0)] # split 的时候concat张量反而变小了
+                    stored_state["grads"] = [jt.concat((stored_state["grads"][0], jt.zeros_like(extension_tensor)), dim=0)] # 共享内存了 所以直接赋值list即可
  
                 group["params"][0] = jt.concat((group["params"][0], extension_tensor), dim=0)
                 optimizable_tensors[group["name"]] = group["params"][0]
@@ -414,8 +415,7 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size): # 该方法用于对高斯模型进行密集化和修剪。
 
-        jt.clean_graph()
-        jt.sync_all()
+    
         jt.gc() # 清理图，同步所有设备，进行垃圾回收
         
         with jt.no_grad():
@@ -432,9 +432,6 @@ class GaussianModel: # 定义Gaussian模型，初始化与Gaussian模型相关�
                 big_points_ws = self.get_scaling.max(dim=1).data > 0.1 * extent
                 prune_mask = jt.logical_or(jt.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask) # 修剪掩码中的点
-
-        jt.clean_graph()
-        jt.sync_all()
         jt.gc() # 清理图，同步所有设备，进行垃圾回收
 
     @ jt.no_grad()

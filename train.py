@@ -26,6 +26,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     gaussians.training_setup(opt) # 设置gaussian对象的训练参数
     if checkpoint:
         model_params, first_iter = jt.load(checkpoint)['gaussian_param'],jt.load(checkpoint)['iter']
+        for key in model_params.keys():
+            if key != "optimizer_state" and key != "active_sh_degree" and key != "spatial_lr_scale":
+                model_params[key] = jt.array(model_params[key])
+            elif key == "optimizer_state":
+                for i,key2 in enumerate(model_params[key]['defaults']['param_groups']):
+                    model_params[key]['defaults']['param_groups'][i]['params'][0] = jt.array(model_params[key]['defaults']['param_groups'][i]['params'][0])
+                    model_params[key]['defaults']['param_groups'][i]['values'][0] = jt.array(model_params[key]['defaults']['param_groups'][i]['values'][0])
+                    model_params[key]['defaults']['param_groups'][i]['m'][0] = jt.array(model_params[key]['defaults']['param_groups'][i]['m'][0])
+                    model_params[key]['defaults']['param_groups'][i]['grads'][0] = jt.array(model_params[key]['defaults']['param_groups'][i]['grads'][0])
         gaussians.restore(model_params, opt)
     
     viewpoint_stack = None # 用于存储视角信息
@@ -60,9 +69,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # 计算loss SSIM
         gaussians.optimizer.backward(loss) # 反向传播
         grad = gaussians.screenspace_points.opt_grad(gaussians.optimizer) # 获取梯度
-        viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1) # 由于视空间坐标是三维的，而梯度是二维的，所以需要在梯度后面加一个0
-        viewspace_point_tensor_grad = jt.array(viewspace_point_tensor_grad, dtype=viewspace_point_tensor.dtype) # 转换为tensor
-
+        try:
+            # 你的代码
+            viewspace_point_tensor_grad = jt.concat([grad, jt.zeros((grad.shape[0], 1), dtype=grad.dtype)], dim=1)
+        except RuntimeError:
+            print("Error occurred, the shape of grad is: ", grad.shape)
+            raise
         iter_end=time.time() # 用于计算每个iteration的时间
         # Densification
         if iteration < opt.densify_until_iter: # 如果iteration小于densify_until_iter，就进行高斯点云的密度增加
@@ -102,7 +114,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 jt.save({"gaussian_param":gaussians.capture(),"iter":iteration}, scene.model_path + "/chkpnt" + str(iteration) + ".pkl")
 
-        
+        # test to decrease the cuda memory
+        # del image,viewspace_point_tensor,gt_image,grad, render_pkg,loss,viewspace_point_tensor_grad,Ll1,visibility_filter, radii # 删除不需要的变量
+        # jt.clean_graph()
+        # jt.sync_all()
+        jt.gc() # 清理图，同步所有设备，进行垃圾回收
+        # jt.display_memory_info()
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
@@ -133,7 +150,8 @@ def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterat
     
     # Report test and samples of training set
     if iteration % testing_iterations == 0:
-        jt.gc()
+        jt.gc() # 清理图，同步所有设备，进行垃圾回收
+        # jt.display_memory_info()
         
         # 记录梯度范数
         grads = scene.gaussians.xyz_gradient_accum / scene.gaussians.denom
@@ -170,8 +188,8 @@ def training_report(tb_writer,iteration,Ll1,loss,l1_loss,elapsed, testing_iterat
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity.numpy(), iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)        
-
-        jt.gc()
+        jt.gc() # 清理图，同步所有设备，进行垃圾回收
+        # jt.display_memory_info()
 
 if __name__ == "__main__":
     
